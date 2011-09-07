@@ -1,0 +1,32 @@
+<h1>Look up jobs</h1>
+<% form_tag({:action => 'findJob'},:multipart => true) do %>
+<div id="block">
+  <p><label for="raxml_job">Enter job id</label> :  
+    <%= text_field_tag "rax_job",nil,  :size =>10 %>
+  </p>
+  <div id="error">
+    <%= @error_id%>
+  </div>
+</div>
+<div>
+  <%= submit_tag "Find job" %>
+</div>
+<% end %>
+
+<% form_tag({:action => 'listOldJobs'},:multipart => true) do %>
+<div id="block">
+  You can enter your email adress below to list all your old jobs for which you entered your email address and that are saved.
+  <p><label for="raxml_job">Enter email adress</label> : 
+    <%= text_field_tag "rax_email",nil,  :size =>30 %>
+  </p>
+  <div id="error">
+    <%= @error_email%>
+  </div>
+</div>
+<div>
+  <%= submit_tag "List all jobs" %>
+</div>
+<% end %>
+
+
+

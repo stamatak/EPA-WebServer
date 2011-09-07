@@ -1,0 +1,16 @@
+<html>
+  <title><%= @title || "RAxML" %></title>
+  <body>
+    <table width="100%">
+      <tr height="100">
+        <td width="100"></td><td></td>
+      </tr>
+      <tr>
+        <td></td><td><%=yield %></td>
+      </tr>
+      <tr>
+        <td></td><td></td>
+      </tr>
+    </table>
+  </body>
+</html>

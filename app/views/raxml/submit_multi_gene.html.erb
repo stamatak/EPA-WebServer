@@ -1,0 +1,193 @@
+<h1>Submit job</h1>
+
+<%= error_messages_for :raxml, :header_message => "There were #{@raxml.errors.size} errors in your input!" %>
+<!-- Single or multi gene files -->
+<div class="clearfix">
+  <div id="modusButton">
+    <div id="modusUnselected"> <li><%= link_to "Single Gene", :action => 'submit_single_gene'%></li>
+    </div>
+  </div>
+  <div id="modusButton">
+    <div id="modusSelected"><li>Multi Gene</li>
+    </div>
+  </div>
+  
+</div>
+<% form_tag({:action => 'submitJob'},:multipart => true) do %>
+<div id="flag">
+  <input type="text" name="modus" value="mga" />
+</div>
+<!-- upload alignmentfile -->
+<div class="clearfix" id="block">
+  <div id="first_upload">
+    <p><label for="raxml_alifile">Select alignment file</label> :   
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_alifile',event)" onmouseout="hideTooltip('help_alifile')"/>
+      <div id="upload">
+        <%= file_field 'raxml', 'alifile' %>
+      </div>
+      <div class="help" id="help_alifile" style="visibility:hidden" >
+        <div id="help_header">
+          Alignmentfile:
+        </div>
+        Upload a multi gene reference alignment with aligned query sequences in FASTA or PHYLIP format. If the query sequences are not aligned to the reference alignment, please check the <i>"Upload unaligned reads"</i> button below and upload the query reads separately. <u>The server will automatically rename taxa if they are not unique within the alignment do to PHYLIP format conversion tools that restrict taxa names to 10 characters only.</u>
+      </div>
+    </p>
+  </div>
+  <!-- upload treefile -->
+  <div id ="first_upload">
+    <p><label for="tree_file">Select tree file</label> : 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_treefile',event)" onmouseout="hideTooltip('help_treefile')"/>
+      <div id="upload">
+        <%= file_field 'treefile', 'file' %>
+      </div>
+      <div class="help" id="help_treefile" style="visibility:hidden" >
+        <div id="help_header">
+          Treefile:
+        </div>
+        Upload an unrooted, strictly bifurcating reference tree in Newick format that contains the reference sequences. The tree does not need to contain branch lengths because they will be automatically estimated by the RAxML EPA algorithm
+      </div>   
+    </p>
+  </div>
+  <div id="first_upload">
+    <p><label for="par_file">Select multi gene partition file</label> : 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_parfile',event)" onmouseout="hideTooltip('help_parfile')"/>
+      <div id="upload">
+        <%= file_field 'raxml', 'parfile' %>
+      </div>
+      <div class="help" id="help_parfile" style="visibility:hidden" >
+        <div id="help_header">
+          Multi Gene Partition File:
+        </div>
+        Description here.
+      </div>   
+    </p>
+  </div>
+  <!-- upload query reads file -->
+  <div id ="second_upload">    <p><label for="query_file">Select query reads file</label> :  
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_queryfile',event)" onmouseout="hideTooltip('help_queryfile')"/>
+      <div id="upload">
+        <%= file_field 'raxml', 'queryfile' %>
+      </div>
+      <div class="help" id="help_queryfile" style="visibility:hidden" >
+        <div id="help_header">
+          Query Reads File:
+        </div>
+        Description here.
+      </div>  
+      <div >Cluster reads <%= check_box_tag "cluster", "T"%><img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_cluster',event)" onmouseout="hideTooltip('help_cluster')"/></div>
+      <div class="help" id="help_cluster" style="visibility:hidden" >
+        <div id="help_header">
+          Clustering:
+        </div>
+        Cluster the uploaded reads using RC Edgar's uclust program. Only the consensus sequences are then placed in the reference tree.    
+      </div>
+    </p>
+  </div>
+ </div>
+<!-- Select query type -->
+<div class="clearfix"  id="block">
+  <div id="query_type">
+    <div id="models">
+      <!-- MGA models -->
+      <div id="MGA" style="display:block" >  
+        <p><label for = "substmodel">Model of Rate Heterogeneity </label> : 
+          <%= select_tag "substmodel", "#{@model_options}" %>
+        </p>
+        
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Select speed -->
+<div id="block">
+  <p><label for = "speed">Fast</label>: 
+    <input id="chSpeed" name="chSpeed" type="checkbox" value="T" checked ="checked" onclick="optionalCheckboxElementsSpeed('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')"/>
+    <!--   <%= check_box('speed', 'speed', {:checked=>'checked'} ,checked_value="y", unchecked_value="v")%>  -->
+    
+    </p>
+</div>
+
+<div id="block">
+  <!-- Select bootstrapping -->
+  Use Bootstrapping <input id="chBoot" name="chBoot" type="checkbox" value="T" onclick="optionalCheckboxElementsBootstrap('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')"/>
+  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_bootstrap',event)" onmouseout="hideTooltip('help_bootstrap')"/>
+  <div class="help" id="help_bootstrap" style="visibility:hidden" >
+    <div id="help_header">
+      Bootstrapping:
+    </div>
+    Check this button if you want to infer query placement uncertainty values via standard phylogenetic Bootstrapping.
+  </div>
+
+  or  Use Heuristics <input id="chHeu" name="chHeu" type="checkbox" value="T" onclick="optionalCheckboxElementsHeuristics('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')" />
+  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_heuristics',event)" onmouseout="hideTooltip('help_heuristics')" />
+  <div class="help" id="help_heuristics" style="visibility:hidden" >
+    <div id="help_header">
+      Heuristics:
+    </div>
+    Check this box if you want to use the fast placement heuristics (recommended for large datasets).
+  </div>
+
+
+  <div class="optionLevel1"  id="bootstrap" style="display:none" >
+    <p><label for = "bootstrap">Random seed</label> : 
+      <%= text_field_tag "random_seed",1234,  :size =>4 %></p> 
+    <p><label for = "bootstrap">Number of Bootstrap Replicates:</label>
+      <%= text_field_tag "runs",100,  :size =>4 %>
+    </p>
+  </div>
+  
+  <!-- Select Heuristics -->
+  
+  <div class="optionLevel1" id="heuristic" style="display:none">
+    <p><label for = "heuristic">Heuristic </label> : 
+      <%= select_tag "heuristic", "#{@heuristics}" %>
+      <%= select_tag "heu_float","#{@heuristics_values}"%>
+    </p>
+  </div>
+</div>
+<div id="block">
+  <p><label for="job_desc">Job Description(optional):</label>
+    <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_job_description',event)" onmouseout="hideTooltip('help_job_description')"/>
+    <div class="help" id="help_job_description" style="visibility:hidden" >
+      <div id="help_header">
+        Job Description:
+      </div>
+      If you enter your email address and use that address in the <i>"Look up jobs"</i> section, the listed job ids will be supplemented with your description.
+    </div>
+    <div id="job_description">
+      <%= text_area_tag 'job_desc',  nil, :size => "60x2"%>
+    </div>
+  </p>
+</div>
+
+<div class="clearfix" >
+  <div id="submit_button">
+    <%= submit_tag "Submit" %>
+  </div>
+  <div id="email">
+    <!-- Email address field -->
+    <p><label for="raxml_email">Email for notification(optional)</label> : 
+      <%= text_field_tag "rax_email",nil,  :size =>40 %> 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_email',event)" onmouseout="hideTooltip('help_email')"/>
+      <div class="help" id="help_email" style="visibility:hidden" >
+        <div id="help_header">
+          Your email address:
+        </div>
+        Your email address is used to relate your submissions. If you enter your email address for your jobs, you can use your email address in the <i>"Look up jobs"</i> section to list all your jobs submitted with that address, rather than always tiping every single job id in that section. 
+        <p>Your email is also used to send you an email when your job has been finished.</p>
+      </div>
+    </p>
+    
+  </div>
+  
+  <% end %>
+</div>
+<div id="reset_tag">
+  <% form_tag({:action => 'submit_multi_gene'},:multipart => true) do %>
+  <%= submit_tag "Reset" %>
+  <% end%>
+</div>
+
+
+

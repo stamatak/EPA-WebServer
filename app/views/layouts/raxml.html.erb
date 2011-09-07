@@ -1,0 +1,61 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html>
+
+  <title>RAxML_EPA</title>
+  <%= javascript_include_tag "application" %>
+  <%= stylesheet_link_tag 'raxml' %>
+  <style type="text/css"></style>
+  <body>
+    <div id="main_wrapper">
+      <div id="header">
+        <div id="header_inner">
+
+        </div>
+      </div>
+      <div id="spacer">  
+      </div>
+      
+      <div id="middle_wrapper">
+        <div id="sidebar">
+          <div id="sidebar_inner">
+            <div id="nav">
+              <%= render :partial => "shared/navigation" %>
+            </div>
+            <div id="spacer">
+            </div>
+            <div id="counter">
+              <ul>
+                <li>Visitors: <%= @ip_counter %></li>
+                <li>Submissions: <%= @submission_counter %></li>
+                <li>Currently used slots: <%= @used_slots%>/<%= @slots%> </li> 
+              </ul>
+            </div>
+            <div id="jobs">
+            </div>
+          </div>
+        </div>
+        
+        <div id="content">
+          <div id="content_inner"> 
+            <%=yield %>
+          </div>
+        </div>
+        <div id="spacer2">
+        </div>
+      </div>
+    
+      <div id="footer">
+        <div id="footer_inner">
+          <div id="footer_left">
+          </div>
+          <div id="footer_right">
+            <p> &copy 2010 <a href="http://wwwkramer.in.tum.de/exelixis/", target="_blank">Exelixis Lab</a> |  <%= link_to "Contact", :action => 'contact'%></p>
+          </div>
+        </div>
+      </div> 
+    </div>  
+    
+  </body>
+</html>

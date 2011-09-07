@@ -1,0 +1,9 @@
+.errorExplanation {
+    border: 2px solid red;
+    padding: 2em;
+}
+
+.fieldWithErrors input, .fieldWithErrors textarea {
+    border:2px solid red;
+    font-weight:bold;
+}

@@ -1,0 +1,83 @@
+<h1>About EPA</h1>
+
+<div id="block">
+  <h2>RAxML - Evolutionary Placement Algorithm</h2>
+  <p>The Evolutionary Placement Algorithm (EPA) forms part of the standard RAxML release version 726.</p>
+  
+  <p>The EPA algorithm works as follows:</p>
+  
+  <div id="text">
+    <h3>Input:</h3>
+    <p>A multiple sequence alignment in standard RAxML relaxed PHYLIP format
+    that contains full length reference sequences and short reads that have been aligned
+    with respect to the MSA of the full length reference sequences.</p>
+    <p>A reference tree topology that entails all full length reference sequences of the MSA.</p>
+  </div>
+
+  <div id="text">
+    <h3>Algorithm:</h3>
+    
+    <p>The EPA algorithm will initially read in the alignment and the reference tree.
+    Those taxa of the alignment that are contained in this tree will be marked as reference sequences
+    whereas the taxa not contained in the tree will ba marked as query sequences.</p>
+    
+    <p>Initially, RAxML will optimize ML model parameters and branch lengths on the reference tree topology.</p>
+    
+    <p>Thereafter, RAxML compute the optimal insertion branch (under Maximum Likelihood)
+    in the reference tree for each query sequence (short read), that is, it will assign reads to branches
+    of the tree potentially as multi-furcations, if more than one read is assigned to a branch of the reference tree.
+    Essentially, we are calculating the distribution of reads over the branches of the tree.</p>
+    
+    <p>In addition to the straight-forward assignment of each read (query sequence) to one specific branch via ML,
+    the EPA algorithm can also quantify palcement uncertainty via Likelihood weights (recommended) or standard
+    phylogenetic bootstrapping.</p>
+  </div>
+  
+  <div id="text">
+    <h3>Output:</h3>
+  
+    <p>The EPA algorithm returns several plain text files that can then be used for analyzing the results (appropriate
+    diversity metrics are currently under development).</p>
+    
+    <p>It will return the reference tree for the full length sequences with branch lengths and branch labels.
+    In addition, the program returns a classification file that contains the assignment of query sequences (reads)
+    to the branch labels of the reference tree topology. If bootstrapping or likelihood weights are used, this file
+    will contain multiple branch labels for each query sequence including the likelihood weight or bootstrap support values
+    for each placement.</p>
+  </div>
+
+  <div id="text">
+    <h3>Documentation:</h3>
+    
+    <p>The original EPA algorithm is described in:
+    <a href="http://wwwkramer.in.tum.de/exelixis/pubs/Exelixis-RRDR-2009-3.pdf">Exelixis-RRDR-2009-3.pdf</a></p>
+    
+    <p>The parallelization of the EPA algorithm is described in: <a href="http://wwwkramer.in.tum.de/exelixis/pubs/Exelixis-RRDR-2009-2.pdf">Exelixis-RRDR-2009-2.pdf</a></p>
+
+    <p>A video of a talk about the EPA by Alexis Stamatakis is available here:
+    <a href="http://www.scivee.tv/node/16283">http://www.scivee.tv/node/16283</a></p>
+  </div>
+
+  <div id="text">
+    <h3>Additional Capabilities of the Web-Server:</h3>
+    
+    <p>The Web-Server offers some additional capabilities:</p>
+    
+    <p>
+    <ul>
+      <li>The web-server can align the short reads to a given reference alignment of full-length sequences
+        via hmmalign.</li>
+      
+      <li>Prior to the hmmalign step, the web-server can cluster and thereby reduce the number of reads by deploying the
+        novel method UCLUST developed by RC Edgar <a href="http://www.drive5.com/usearch/index.html">http://www.drive5.com/usearch/index.html</a></li>
+      
+      <li>The web-server can visualize EPA run results for you.</li>
+      <li>If you intend to use multi-gene alignments, the server currently provides an additional submit form for that. <%= link_to "Submit multi-gene alignment.", :action => 'submit_multi_gene' %>
+    </ul>
+    </p>
+  </div>
+</div>
+
+
+
+

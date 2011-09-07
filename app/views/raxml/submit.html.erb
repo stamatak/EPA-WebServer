@@ -1,0 +1,213 @@
+<h1>Submit job</h1>
+
+<%= error_messages_for :raxml, :header_message => "There were #{@raxml.errors.size} errors in your input!" %>
+
+<% form_tag({:action => 'submitJob'},:multipart => true) do %>
+
+<!-- Single or multi gene files -->
+<div class="clearfix">
+  <div id="modusButton">
+    <div id="modusSelected"> <li>Single Gene</li>
+    </div>
+  </div>
+  <div id="modusButton">
+    <div id="modusUnselected"><li><%= link_to "Multi Gene", :action => 'submit_multi_gene'%></li>
+    </div>
+  </div>
+
+</div>
+
+<!-- upload alignmentfile -->
+<div class="clearfix" id="block">
+  <div id="first_upload">
+    <p><label for="raxml_alifile">Select alignment file</label> :   
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_alifile',event)" onmouseout="hideTooltip('help_alifile')"/>
+      <div id="upload">
+        <%= file_field 'raxml', 'alifile' %>
+      </div>
+      <div class="help" id="help_alifile" style="visibility:hidden" >
+        <div id="help_header">
+          Alignmentfile:
+        </div>
+        Upload a reference alignment with aligned query sequences in FASTA or PHYLIP format. If the query sequences are not aligned to the reference alignment, please check the <i>"Upload unaligned reads"</i> button below and upload the query reads separately.
+      </div>
+    </p>
+  </div>
+  <!-- upload treefile -->
+  <div id ="second_upload">
+    <p><label for="tree_file">Select tree file</label> : 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_treefile',event)" onmouseout="hideTooltip('help_treefile')"/>
+      <div id="upload">
+        <%= file_field 'treefile', 'file' %>
+      </div>
+      <div class="help" id="help_treefile" style="visibility:hidden" >
+        <div id="help_header">
+          Treefile:
+        </div>
+        Upload an unrooted, strictly bifurcating reference tree in Newick format that contains the reference sequences. The tree does not need to contain branch lengths because they will be automatically estimated by the RAxML EPA algorithm
+      </div>   
+    </p>
+  </div>
+</div>
+<!-- upload optional query reads -->
+<div id="block">
+  Upload unaligned query reads:   
+  <input id="qfile" name="qfile" type="checkbox" value="T" onclick="showHideCheckboxElements('qfile','queryfile')"/>
+
+  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_unaligned',event)" onmouseout="hideTooltip('help_unaligned')"/>
+  <div class="help" id="help_unaligned" style="visibility:hidden" >
+    <div id="help_header">
+      Unaligned reads:
+    </div>
+    Check this box if you want the web-server to automatically align your reads to the full-length reference sequence alignment using hmmalign. In the case that you have a huge number of reads you may then also chose the option <i>"Cluster reads"</i>. The clustering is then only performed for consensus reads that are built using RC Edgar's uclust program   
+  </div>
+
+  <div class="optionLevel1"  id="queryfile" style="display:none">
+    <p><label for="raxml_readfile">Select query file</label> : 
+      <div id="upload">
+        <%= file_field 'raxml', 'queryfile' %>
+      </div>
+    </p>
+    <div class="optionLevel1" >Cluster reads <%= check_box_tag "cluster", "T"%></div>
+  </div>
+</div>
+
+<!-- Select query type -->
+<div class="clearfix"  id="block">
+  <div id="query_type">
+    <p><label for = "query"> Alignment Data Type: </label>
+      
+      <input  id="query_DNA" name="query" type="radio" value="DNA" checked="checked" onclick="document.getElementById('DNA').style.display='block';document.getElementById('AA').style.display='none' ; document.getElementById('PAR').style.display='none'" />DNA
+      
+      <input  id="query_AA" name="query" type="radio" value="AA"   onclick="document.getElementById('DNA').style.display='none';document.getElementById('AA').style.display='block'; document.getElementById('PAR').style.display='none'"/>AA
+      
+      <input  id="query_PAR" name="query" type="radio" value="PAR"   onclick="document.getElementById('DNA').style.display='none';document.getElementById('AA').style.display='none'; document.getElementById('PAR').style.display='block'"/>PARTIONED 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_input',event)" onmouseout="hideTooltip('help_input')"/>
+      <div class="help" id="help_input" style="visibility:hidden" >
+        <div id="help_header">
+          Query type:
+        </div>
+        Select the type of data in your alignment, this can be either DNA or Protein data or any combination of DNA, Protein, Secondary Structure, Multi-State, or Binary data partitions as specified by a standard RAxML partitioned model file (passed vie the -q option).
+      </div>
+
+    </p>
+  </div>
+  <div id="models">
+    <!-- DNA models -->
+    <div id="DNA" style="display:block" >  
+      <p><label for = "dna_substmodel">Model of Rate Heterogeneity </label> : 
+        <%= select_tag "dna_substmodel", "#{@dna_model_options}" %>
+      </p>
+    </div>
+    
+    <!-- Amino Acid models -->
+    <div id="AA" style="display:none">
+      <p><label for = "aa_substmodel">Model of Rate Heterogeneity </label> : 
+        <%= select_tag "aa_substmodel", "#{@aa_model_options}" %>
+        <%= select_tag "matrix", "#{@aa_matrices}" %>
+      </p>
+      <p>Use empirical base frequencies <%= check_box_tag "sm_float", "[F]"%> </p>
+    </div>
+    
+    <!-- Partioned models -->
+    <div  id="PAR" style="display:none">
+      <p><label for = "par_substmodel">Rate Heterogeneity Model </label> : 
+        <%= select_tag "par_substmodel", "#{@par_model_options}" %>
+      <p> <label for="raxml_parfile"> Partition File</label> : 
+        <%= file_field 'raxml', 'parfile' %></p>
+      </p>
+    </div>
+  </div>
+  
+</div>
+<!-- Select speed -->
+<div id="block">
+  <p><label for = "speed">Fast</label>: 
+    <%= check_box('speed', 'speed', {:checked=>'checked'} ,checked_value="y", unchecked_value="v")%>
+  </p>
+</div>
+
+
+<div id="block">
+  <!-- Select bootstrapping -->
+  Use Bootstrapping <input id="chBoot" name="chBoot" type="checkbox" value="T" onclick="optionalCheckboxElements('bootstrap','chBoot','heuristic','chHeu')"/>
+  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_bootstrap',event)" onmouseout="hideTooltip('help_bootstrap')"/>
+  <div class="help" id="help_bootstrap" style="visibility:hidden" >
+    <div id="help_header">
+      Bootstrapping:
+    </div>
+    Check this button if you want to infer query placement uncertainty values via standard phylogenetic Bootstrapping.
+  </div>
+
+  or  Use Heuristics <input id="chHeu" name="chHeu" type="checkbox" value="T" onclick="optionalCheckboxElements('heuristic','chHeu','bootstrap','chBoot')" />
+  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_heuristics',event)" onmouseout="hideTooltip('help_heuristics')" />
+  <div class="help" id="help_heuristics" style="visibility:hidden" >
+    <div id="help_header">
+      Heuristics:
+    </div>
+    Check this box if you want to use the fast placement heuristics (recommended for large datasets).
+  </div>
+
+
+  <div class="optionLevel1"  id="bootstrap" style="display:none" >
+    <p><label for = "bootstrap">Random seed</label> : 
+      <%= text_field_tag "random_seed",1234,  :size =>4 %></p> 
+    <p><label for = "bootstrap">Number of Bootstrap Replicates:</label>
+      <%= text_field_tag "runs",100,  :size =>4 %>
+    </p>
+  </div>
+  
+  <!-- Select Heuristics -->
+  
+  <div class="optionLevel1" id="heuristic" style="display:none">
+    <p><label for = "heuristic">Heuristic </label> : 
+      <%= select_tag "heuristic", "#{@heuristics}" %>
+      <%= select_tag "heu_float","#{@heuristics_values}"%>
+    </p>
+  </div>
+</div>
+<div id="block">
+  <p><label for="job_desc">Job Description(optional):</label>
+    <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_job_description',event)" onmouseout="hideTooltip('help_job_description')"/>
+    <div class="help" id="help_job_description" style="visibility:hidden" >
+      <div id="help_header">
+        Job Description:
+      </div>
+      If you enter your email address and use that address in the <i>"Look up jobs"</i> section, the listed job ids will be supplemented with your description.
+    </div>
+    <div id="job_description">
+      <%= text_area_tag 'job_desc',  nil, :size => "60x2"%>
+    </div>
+  </p>
+</div>
+
+<div class="clearfix" >
+  <div id="submit_button">
+    <%= submit_tag "Submit" %>
+  </div>
+  <div id="email">
+    <!-- Email address field -->
+    <p><label for="raxml_email">Email for notification(optional)</label> : 
+      <%= text_field_tag "rax_email",nil,  :size =>40 %> 
+      <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_email',event)" onmouseout="hideTooltip('help_email')"/>
+      <div class="help" id="help_email" style="visibility:hidden" >
+        <div id="help_header">
+          Your email address:
+        </div>
+        Your email address is used to relate your submissions. If you enter your email address for your jobs, you can use your email address in the <i>"Look up jobs"</i> section to list all your jobs submitted with that address, rather than always tiping every single job id in that section. 
+        <p>Your email is also used to send you an email when your job has been finished.</p>
+      </div>
+    </p>
+    
+  </div>
+  
+  <% end %>
+</div>
+<div id="reset_tag">
+  <% form_tag({:action => 'submit'},:multipart => true) do %>
+  <%= submit_tag "Reset" %>
+  <% end%>
+</div>
+
+
+

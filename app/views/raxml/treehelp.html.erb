@@ -1,0 +1,95 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+     "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+  <title>Treeviewer Help</title>
+  <%= stylesheet_link_tag 'help' %>
+  <body>
+    <h1>Archaeopteryx Treeviewer Help</h1>
+    <p>We provide a brief overview of some relevant Archaeopteryx Treeviewer features below.
+For a more detailed description, please refer to the Archaeopteryx project web-site <a href="http://www.phylosoft.org/archaeopteryx/" onclick="window.open(this.href, '_blank', 'toolbar=yes,location=yes,directories=yes,resizable=yes,scrollbars=yes, width=800, height=600'); return false;">http://www.phylosoft.org/archaeopteryx</a>.</p>
+    <p><u>Attention!</u> The features listed below are not part of the original Archaeopteryx treeviewer and were added subsequently:</p>
+      <ul>
+        <li>Colorize Branches with different scorings</li>
+        <li>Mouse rollover histograms</li>
+        <li>Branchdata pop-ups</li>
+        <li>Branch labels</li>
+        <li>Node width</li>
+      </ul>
+    <p>
+      If you have questions, proposals or other concerns regarding these points, feel free to contact us via the "Contact" form. 
+    </p>
+    <div id="treeviewer">
+      <div id="part">
+      <h2>The Treeviewer</h2>
+      <img src="/images/Treeviewer.jpg" width="1000", height="550"/>
+      </div>
+      <div id="description">
+        <div id="part">
+          <h3>Left Checkboxes</h3>
+          
+          <h4>Phylogram</h4>
+         <p>The  branch lengths of the tree correspond to the branch length given within the tree.</p>
+          <h4>Dyna Hide</h4>
+          <p> Dynamically hide labels if not enough space is available.</p>
+          <h4>Rollover</h4>
+          <p> Aktivates the mouse over function for the tree. </p>
+          <h4>Colorize Branches</h4>
+          <p>Assign colors to branches based on diversity measures. The coloring represents the mean value of the confidences off all placements on that branch. The confidences correspond to the diversity scorings selected beneath. </p>
+          <ul><li><b>QSBI</b> - A prototype diversity measure that scores for every branch, if the placements distribution in the left and right subtree of a query sequence is better than expected. The mean of all query sequences is taken as score. Green means that the placement distributions in the left and right subtree is significantly different from what has been expected. </li>
+          <li><b>EDPL</b> - Measures the spreading of the query sequence within the tree. A brighter green means a very high mean confidence on that branch. A bright red means the opposite. The slider allows a manual adjustment of the cutoff.</li>
+          </ul>
+          <p>
+          All measurements can be combined. 
+          </p> 
+          <h4>Use Branch-Width</h4>
+          <p>Display the fraction of reads that have been placed into a branch by means of a relative branch width.</p>
+          <h4>Use Node-Width</h4>
+          <p>Display the fraction of reads that have been placed in the undelying subtree by means of a relative node width.</p>
+          <h4>Leaf Names</h4>
+          <p>Display the taxa names on the leaves of the tree.</p>
+          <h4>Branch Names</h4>
+          <p>Display the branch labels.</p>
+        </div>
+        <div id ="part">
+          <h3>Tree manipulation</h3>
+          <p>
+            In the drop down menu below "Click on Node to:" you can switch between actions that are performed when you click on a node or a branch in the visualized tree repectively.
+            <ul>
+              <li>Display Node Data</li>
+              <li>Collapse/Uncollapse</li>
+              <li>Root/Reroot (only on branches)</li>
+              <li>Sub/Super Tree</li>
+              <li>Swap Descendants</li>
+              <li>Colorize subtree</li>
+              <li>Delete Subtree/Node</li>
+            </ul>
+          </p>
+          </div>
+        <div id="part">
+          <h3>Top main panel</h3>
+          <h4>Type</h4>
+          <p>Select your preferred tree layout between the following:
+            <ul>
+              <li>Rectangular</li>
+              <li>Euro Type</li>
+              <li>Rounded</li>
+              <li>Triangular</li>
+              <li>Unrooted</li>
+          </ul></p>
+          <h4>View as Text</h4>
+          <p>View the represented tree in different file formats like e.g. phyloXML</p>
+        </div>
+        <div id="part">
+          <h3>The interactive tree visualization</h3>
+          <h4>Branch placement histogram</h4>
+          <p>A mouse roll over on a branch that has placements on it displays a histogram of raxml weights. These weights represent either likelihood weights or bootstrap supports. </p>
+
+          <h4>Branch Data View</h4>
+          <p>By left clicking on a branch, a pop up window is displayed showing a more detailed view of the placements present on the corresponding branch. In the bottom part of the window, a table with the read names, the pplacer scores and the raxml weights (likelihood or bootstrap support) are displayed. </p>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>

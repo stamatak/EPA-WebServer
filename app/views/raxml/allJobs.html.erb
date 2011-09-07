@@ -1,0 +1,30 @@
+<% form_tag({:action => 'deleteOldJobs'},:multipart => true) do %>
+<div style="display:none">
+  <%= check_box("email", "email", {}, checked_value=@jobs_email, unchecked_value=@jobs_email)%>
+</div>
+<div id="jobs"> 
+  <table id="jobslist" width="650px">
+    <tr>
+      <td></td>
+      <td><b>Job ID</b></td>
+      <td><b>Description</b></td>
+      <td><b>Expired in:</b></td>
+    </tr>
+    <% @jobids.each_index do |i| %>
+    
+    <tr id =<%=i%> >
+      <td><%= check_box("jobs", "#{i}", {}, checked_value= @jobids[i], unchecked_value="0")%></td>
+      <td><%= link_to @jobids[i], :action => 'results', :id => @jobids[i]%></td>
+      <td width="500px"><%= @jobdescs[i] %></td>
+      <td width="70px"><%= @time_left[i]%></td>
+    </tr>
+    <script type="text/javascript">isEven(<%=i%>)</script>
+    <% end %>
+  </table>
+  
+  <div id="submit_button">
+    <%= submit_tag "Delete" %>
+  </div>
+</div>
+
+<% end %>

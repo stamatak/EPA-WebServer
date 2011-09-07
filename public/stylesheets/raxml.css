@@ -1,0 +1,389 @@
+/*tags*/
+body {
+    text-align: center;
+    max-width: 1280px;
+    min-width: 800px;
+    font-family:verdana, arial,sans-serif;
+    font-size:0.9em;
+    background-color:#f6f7f8;  
+}
+
+h1 { 
+    font-size:1.5em;
+    font-style:italic;
+}
+
+h2{
+    font-size:1.2em;
+    font-style:bold;
+}
+
+a{
+    text-decoration:none;
+    color:#4988b5;
+}
+a:hover{
+    text-decoration:none;
+    color:#ffffff;
+    background-color:#e2ecf3;
+}
+
+/*ids*/
+#block{
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#ffffff;
+    padding:0.2em;
+    padding-left: 1em;
+}
+#block td.left{
+    text-align:right;
+}
+#block td.right{
+    text-align:left;
+}
+#block table{
+    padding-top:2em;
+}
+
+#boots_heu{
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#e2ecf3;
+    padding-left: 1em;
+}
+
+#content{
+    margin-left:200px;
+    font-size:0.9em;
+}
+#content_inner{
+    border-top:3px solid #4988b5;
+   /* border-left:3px solid #4988b5;*/
+    padding-top:2em;
+    padding-left:2em;
+   
+   /* background-color:#f6f7f8;*/
+   /* padding-right:2em; */
+}
+
+#counter{
+    border: 1px solid #4988b5;
+}
+#counter ul{
+    font-size:0.8em;
+    list-style-type:none;
+}
+
+#download li{  
+    list-style-type:none;
+}
+#download a{
+    display:block;
+    text-decoration:none;
+    color:#4988b5;
+}
+#download li a:hover {
+    display:block;
+    text-decoration:none;
+    color:black;
+    background-color:#e2ecf3;
+}
+
+#email{
+    margin:0.2em;
+    border: 1px solid  black;
+    background-color:#ffffff;
+    padding-left: 1em;
+    padding-right: 1em;
+    float:left;
+}
+
+#error{
+    font-size:1em;
+    color:red;
+}
+
+#first_upload{
+    float:left;
+    padding-bottom:1em;
+    padding-right:2em;
+}
+
+#flag{
+    display:none;
+}
+
+#footer{
+    text-align:center;
+    clear:both;
+    height:50px;
+}
+
+
+#footer_inner{
+    
+    
+}
+
+#footer_left{
+    width:200px;
+    float:left;
+}
+
+#footer_right{
+    border-top:3px solid #4988b5;
+    margin-left:200px;
+}
+
+#header {
+    text-align:center;
+}
+#header_inner {
+      height:50px;
+    background-image: url(/images/header.png);
+}
+
+#jobs td{  
+    list-style-type:none;
+}
+#jobs a{
+    display:block;
+    text-decoration:none;
+    color:#4988b5;
+}
+#jobs td a:hover {
+    display:block;
+    text-decoration:none;
+    color:black;
+    background-color:#e2ecf3;
+}
+
+
+
+
+
+#main_wrapper{
+    margin-left:auto;
+    margin-right:auto;
+    text-align:left;
+    background-color:#ffffff;
+   /* background: url(/images/middle_background1.png) repeat-y;*/
+}
+
+#middle_wrapper{
+    background: url(/images/middle_background1.png) repeat-y;
+}
+
+#modusButton{
+    width:120px;
+    float:left;
+}
+
+#modusSelected{
+}
+
+#modusSelected li{
+    border: 1px solid black ;
+    background-color:#ffffff;
+    margin:0.2em;
+    list-style-type:none;
+    text-align:center; 
+    font-weight:bold;
+}
+
+#modusUnselected{
+}
+
+#modusUnselected li {
+    border: 1px solid #4988b5 ;
+    background-color:#ffffff;
+    margin:0.2em;
+    list-style-type:none;
+    text-align:center; 
+    font-weight:bold;
+}
+
+#modusUnselected li a{
+    display:block;
+}
+
+#modusUnselected li a:hover{
+    text-decoration:none;
+    color:#ffffff;
+    background-color: #4988b5;
+}
+
+#models{
+    float:left
+}
+
+#nav{
+}
+#nav li{  
+    list-style-type:none;
+    line-height:3.0;
+    text-align:center; 
+    font-weight:bold;
+}
+#nav li a {
+    display:block;
+    text-decoration:none;
+    color:#4988b5;
+    
+}
+#nav li a:hover {
+    display:block;
+    text-decoration:none;
+    color:#ffffff;
+    background-color:#e2ecf3;
+}
+
+#query_wrapper{
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#e2ecf3;
+    padding-left: 1em;
+}
+#query_type{
+    float:left;
+    padding-right:6em;
+}
+
+#reset_tag{
+   display:block;
+   clear:both;
+   padding-top:2em;
+}
+
+#second_upload{
+    float:left;
+    padding-bottom:1em;
+}
+
+#sidebar{
+    width:200px;
+    float:left;
+}
+
+#sidebar_inner{
+    padding:0.9em;
+}
+
+#spacer{
+    height:50px;
+}
+
+#spacer2{
+    clear:both;
+}
+
+#speed{   
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#e2ecf3;
+    padding-left: 1em;
+    /* border-bottom: 1px dotted;*/
+}
+
+#submit_button{
+    float:left;   
+}
+
+#text a{
+    text-decoration:none;
+    color:#4988b5;
+}
+#text a:hover{
+    text-decoration:none;
+    color:#ffffff;
+    background-color:#e2ecf3;
+}
+
+#third_upload{
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#e2ecf3;
+    padding-left: 1em;  
+}
+
+#upload_wrapper{
+    /*border-bottom: 1px dotted;*/
+    margin:0.2em;
+    border: 1px solid  #4988b5;
+    background-color:#e2ecf3;
+    padding-left: 1em;
+}
+
+
+/*other*/
+#header_inner,#nav,#counter,footer_inner,#content_inner{
+    overflow: hidden;
+}
+
+div.optionLevel1{
+    text-indent:30px;	     
+}
+
+/*classes*/
+
+.clearfix:after{
+    content:".";
+    display: block;
+    height:0;
+    clear:both;
+    visibility:hidden;
+}
+
+.clearfix {display:inline-table;}
+.clearfix{display:block;}
+
+.errorExplanation {
+    border: 2px solid red;
+    padding: 2em;
+}
+
+.fieldWithErrors input {
+    border: 2px solid red;
+    font-weight: bold;
+}
+
+.help{
+    display:block;
+    position:absolute;
+    width:150px;
+    /*top:25px;
+    left:20px;*/
+    background-color:#e2ecf3;
+
+    padding:5px;
+    font-size:11px;
+    color:#333333;
+    text-decoration:none;
+    font-family:Verdana, Arial, Helvetica, sans-serif;
+}
+
+.help #help_header{
+    font-size:1em;
+    font-weight:bold;
+    background-color:#e2ecf3;
+    border-bottom:1px solid black;
+}
+
+.tooltip { position:relative; z-index:24; }
+.tooltip span { display:none;}
+           }
+.tooltip:hover span {
+display:block;
+position:absolute;
+width:120px;
+top:25px;
+left:20px;
+background-color:#FCFBDC;
+border:1px solid #333333;
+padding:5px;
+font-size:11px;
+color:#333333;
+text-decoration:none;
+font-family:Verdana, Arial, Helvetica, sans-serif;
+}

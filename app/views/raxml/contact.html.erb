@@ -1,0 +1,34 @@
+<h1>Contact</h1>
+<% form_tag({:action => 'sendMessage'},:multipart => true) do %>
+<div id="block">
+  <h3>Send us bug reports, questions, special requests or suggestions for improvements.</h3>
+  <table>
+    <tr>
+      <td class="left"><label for="contact_name">Name:</label></td>
+      <td class="right"><%= text_field_tag "con_name",nil,  :size =>50 %> </td>
+    </tr>
+    <tr>
+      <td class="left"><label for="contact_email">Email:</label> </td>
+      <td class="right"><%= text_field_tag "con_email",nil,  :size =>50 %> </td>
+    </tr>
+    <tr>
+      <td class="left"><label for="contact_subject">Subject:</label></td> 
+      <td class="right"><%= text_field_tag "con_subject",nil,  :size =>50 %></td>
+    </tr>
+    <tr>
+      <td class="left"><label for="contact_message">Message:</label></td>
+      <td class="right"><%= text_area_tag 'con_message', nil, :size => "60x15"%></td>
+      <div id="error">
+        <%= @error%>
+      </div>
+    </tr>
+  </table>
+</div>
+<div id="submit_button">
+  <%= submit_tag "Send" %>
+</div>
+<% end %>
+
+
+
+
