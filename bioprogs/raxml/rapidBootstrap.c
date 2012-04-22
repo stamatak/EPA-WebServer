@@ -403,9 +403,7 @@ int treeOptimizeThorough(tree *tr, int mintrav, int maxtrav)
 
   for(i = 1; i <= tr->mxtips + tr->mxtips - 2; i++)
     {     
-#ifdef _IPTOL
-      writeCheckpoint();
-#endif
+
       
       tr->bestOfNode = unlikely;     
       if(rearrangeBIG(tr, tr->nodep[i], mintrav, maxtrav))

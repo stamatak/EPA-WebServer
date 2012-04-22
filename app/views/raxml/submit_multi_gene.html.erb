@@ -23,7 +23,8 @@
     <p><label for="raxml_alifile">Select alignment file</label> :   
       <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_alifile',event)" onmouseout="hideTooltip('help_alifile')"/>
       <div id="upload">
-        <%= file_field 'raxml', 'alifile' %>
+        <input type="file" id="alifile" name="alifile" />
+       <!--  <%= file_field 'raxml', 'alifile' %> -->
       </div>
       <div class="help" id="help_alifile" style="visibility:hidden" >
         <div id="help_header">
@@ -38,7 +39,8 @@
     <p><label for="tree_file">Select tree file</label> : 
       <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_treefile',event)" onmouseout="hideTooltip('help_treefile')"/>
       <div id="upload">
-        <%= file_field 'treefile', 'file' %>
+        <input type="file" id="treefile" name="treefile" />
+        <!-- <%= file_field 'treefile', 'file' %> -->
       </div>
       <div class="help" id="help_treefile" style="visibility:hidden" >
         <div id="help_header">
@@ -52,7 +54,8 @@
     <p><label for="par_file">Select multi gene partition file</label> : 
       <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_parfile',event)" onmouseout="hideTooltip('help_parfile')"/>
       <div id="upload">
-        <%= file_field 'raxml', 'parfile' %>
+        <input type="file" id="parfile" name="parfile" />
+        <!-- <%= file_field 'raxml', 'parfile' %> -->
       </div>
       <div class="help" id="help_parfile" style="visibility:hidden" >
         <div id="help_header">
@@ -66,7 +69,8 @@
   <div id ="second_upload">    <p><label for="query_file">Select query reads file</label> :  
       <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_queryfile',event)" onmouseout="hideTooltip('help_queryfile')"/>
       <div id="upload">
-        <%= file_field 'raxml', 'queryfile' %>
+        <input type="file" id="queryfile" name="queryfile" />
+        <!-- <%= file_field 'raxml', 'queryfile' %> -->
       </div>
       <div class="help" id="help_queryfile" style="visibility:hidden" >
         <div id="help_header">
@@ -99,27 +103,16 @@
   </div>
 </div>
 
-<!-- Select speed -->
-<div id="block">
+<!-- Not used anymore: Select speed -->
+<!-- <div id="block">
   <p><label for = "speed">Fast</label>: 
-    <input id="chSpeed" name="chSpeed" type="checkbox" value="T" checked ="checked" onclick="optionalCheckboxElementsSpeed('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')"/>
-    <!--   <%= check_box('speed', 'speed', {:checked=>'checked'} ,checked_value="y", unchecked_value="v")%>  -->
-    
-    </p>
-</div>
+    <input id="chSpeed" name="chSpeed" type="checkbox" value="T" checked ="checked" onclick="optionalCheckboxElementsSpeed('chSpeed','chSpeed', 'heuristic','chHeu')"/>
+  </p>
+</div> -->
 
 <div id="block">
-  <!-- Select bootstrapping -->
-  Use Bootstrapping <input id="chBoot" name="chBoot" type="checkbox" value="T" onclick="optionalCheckboxElementsBootstrap('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')"/>
-  <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_bootstrap',event)" onmouseout="hideTooltip('help_bootstrap')"/>
-  <div class="help" id="help_bootstrap" style="visibility:hidden" >
-    <div id="help_header">
-      Bootstrapping:
-    </div>
-    Check this button if you want to infer query placement uncertainty values via standard phylogenetic Bootstrapping.
-  </div>
-
-  or  Use Heuristics <input id="chHeu" name="chHeu" type="checkbox" value="T" onclick="optionalCheckboxElementsHeuristics('chSpeed','chSpeed','bootstrap', 'chBoot', 'heuristic','chHeu')" />
+  <!-- Select Heuristics -->
+  Use Heuristics <input id="chHeu" name="chHeu" type="checkbox" value="T" onclick="optionalCheckboxElementsHeuristics('chSpeed','chSpeed', 'heuristic','chHeu')" />
   <img src="/images/helpbutton.jpg" width="15" height="15" onmouseover="showTooltip('help_heuristics',event)" onmouseout="hideTooltip('help_heuristics')" />
   <div class="help" id="help_heuristics" style="visibility:hidden" >
     <div id="help_header">
@@ -136,8 +129,6 @@
       <%= text_field_tag "runs",100,  :size =>4 %>
     </p>
   </div>
-  
-  <!-- Select Heuristics -->
   
   <div class="optionLevel1" id="heuristic" style="display:none">
     <p><label for = "heuristic">Heuristic </label> : 

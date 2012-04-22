@@ -14,9 +14,8 @@ function optionalButton(id,name){
                   
 }
 
-function optionalCheckboxElementsSpeed(speed_id,speed_name,boot_id,boot_name,heu_id,heu_name){
+function optionalCheckboxElementsSpeed(speed_id,speed_name,heu_id,heu_name){
     var speed = document.getElementById(speed_name);
-    var bootstrap = document.getElementById(boot_name);
     var heuristic = document.getElementById(heu_name);
 
     // if Fast is checked then uncheck Heuristics
@@ -26,16 +25,13 @@ function optionalCheckboxElementsSpeed(speed_id,speed_name,boot_id,boot_name,heu
     }
 }
 
-function optionalCheckboxElementsHeuristics(speed_id,speed_name,boot_id,boot_name,heu_id,heu_name){
+function optionalCheckboxElementsHeuristics(speed_id,speed_name,heu_id,heu_name){
     var speed = document.getElementById(speed_name);
-    var bootstrap = document.getElementById(boot_name);
     var heuristic = document.getElementById(heu_name);
      // if Heuristics is checked, then uncheck Bootstrapping and Fast
     if (heuristic.checked){
         document.getElementById(heu_id).style.display = 'block';
-        document.getElementById(boot_id).style.display = 'none';
         document.getElementById(heu_name).checked = true;
-        document.getElementById(boot_name).checked = false;
         document.getElementById(speed_name).checked = false;
     }
     // if Heuristics is unchecked, hide

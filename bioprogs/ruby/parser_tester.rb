@@ -6,7 +6,7 @@ class ParserTester
 
   def initialize(file)
     f = File.open(file, 'r')
-    p = RaxmlAlignmentfileParser.new(f)
+    p = RaxmlAlignmentfileParser.new(f, "GTRGAMMA", nil)
     puts p.format
     puts p.valid_format
     puts p.error

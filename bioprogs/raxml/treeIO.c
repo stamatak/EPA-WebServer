@@ -891,9 +891,8 @@ static boolean treeNeedCh (FILE *fp, int c1, char *where)
       treeEchoContext(fp, stdout, 40);
     }
   putchar('\n');
-
-  if(c1 == ':')    
-    printf("RAxML may be expecting to read a tree that contains branch lengths\n");
+    
+  printf("RAxML may be expecting to read a tree that contains branch lengths\n");
 
   return FALSE;
 } 
@@ -918,6 +917,13 @@ static boolean addElementLen (FILE *fp, tree *tr, nodeptr p, boolean readBranchL
 	    }
 	  else 
 	    {
+	      if(readNodeLabels)
+		{
+		  printf("The program will exit with an error in the next source code line\n");
+		  printf("You are probably trying to read in rooted trees with a RAxML option \n");
+		  printf("that for some reason expects unrooted binary trees\n\n");
+		}
+
 	      assert(!readNodeLabels);
 	      tr->rooted = TRUE;
 	    }
@@ -998,6 +1004,8 @@ static nodeptr uprootTree (tree *tr, nodeptr p, boolean readBranchLengths, boole
     assert(i == tr->nodep[i]->number);
 
   
+ 
+
   if(isTip(p->number, tr->mxtips) || p->back) 
     {
       printf("ERROR: Unable to uproot tree.\n");
@@ -1031,11 +1039,16 @@ static nodeptr uprootTree (tree *tr, nodeptr p, boolean readBranchLengths, boole
       double b[NUM_BRANCHES];
       int i;
       for(i = 0; i < tr->numBranches; i++)
-	b[i] = (r->z[i] + q->z[i]);
+	{
+	  b[i] = (r->z[i] + q->z[i]);	  
+	}
       hookup (q, r, b, tr->numBranches);
     }
   else    
     hookupDefault(q, r, tr->numBranches);    
+
+  tr->leftRootNode = p->next->back;
+  tr->rightRootNode = p->next->next->back;
 
   if(readConstraint && tr->grouped)
     {    
@@ -1051,22 +1064,67 @@ static nodeptr uprootTree (tree *tr, nodeptr p, boolean readBranchLengths, boole
   assert(p->number > tr->mxtips);
 
   if(tr->ntips > 2 && p->number != n) 
-    {    	
+    {          	     
       q = tr->nodep[n];            /* transfer last node's conections to p */
       r = q->next;
       s = q->next->next;
-      
+           
       if(readConstraint && tr->grouped)	
 	tr->constraintVector[p->number] = tr->constraintVector[q->number];       
       
       hookup(p,             q->back, q->z, tr->numBranches);   /* move connections to p */
       hookup(p->next,       r->back, r->z, tr->numBranches);
-      hookup(p->next->next, s->back, s->z, tr->numBranches);           
+      hookup(p->next->next, s->back, s->z, tr->numBranches); 
+
+      if(q == tr->leftRootNode || q == tr->rightRootNode)
+	{
+	  if(q == tr->leftRootNode)
+	    {
+	      if(p->back == tr->rightRootNode)
+		tr->leftRootNode = p;
+	      else
+		{
+		   if(p->next->back == tr->rightRootNode)
+		     tr->leftRootNode = p->next;
+		   else
+		     {
+		       if(p->next->next->back == tr->rightRootNode)
+			 tr->leftRootNode = p->next->next;
+		       else
+			 assert(0);
+		     }
+		}
+	    }
+	  else
+	    {
+	      assert(q == tr->rightRootNode);
+
+	      if(p->back == tr->leftRootNode)
+		tr->rightRootNode = p;
+	      else
+		{
+		   if(p->next->back == tr->leftRootNode)
+		     tr->rightRootNode = p->next;
+		   else
+		     {
+		       if(p->next->next->back == tr->leftRootNode)
+			 tr->rightRootNode = p->next->next;
+		       else
+			 assert(0);
+		     }
+		}
+	    }
+	}
       
       q->back = q->next->back = q->next->next->back = (nodeptr) NULL;
     }
   else    
-    p->back = p->next->back = p->next->next->back = (nodeptr) NULL;
+    {
+      assert(tr->ntips > 2);     
+      p->back = p->next->back = p->next->next->back = (nodeptr) NULL;
+    }
+
+  
   
   assert(tr->ntips > 2);
   
@@ -1123,7 +1181,8 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
   for(i = 0; i < tr->numBranches; i++)
     tr->partitionSmoothed[i] = FALSE;
   
-  tr->rooted      = FALSE;     
+  tr->rooted      = FALSE;  
+  tr->wasRooted   = FALSE;
 
   p = tr->nodep[(tr->nextnode)++]; 
   
@@ -1147,15 +1206,27 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
 	    assert(0);	    
 	}
       else 
-	{                                    /*  A rooted format */
+	{  	  
+	  /*  A rooted format */
+	  
 	  tr->rooted = TRUE;
+	  tr->wasRooted     = TRUE;
+	  
 	  if (ch != EOF)  (void) ungetc(ch, fp);
 	}	
     }
   else 
-    {      
+    {            
       p->next->next->back = (nodeptr) NULL;
+      tr->wasRooted     = TRUE;    
     }
+
+  if(!tr->rooted && adef->mode == ANCESTRAL_STATES)
+    {
+      printf("Error: The ancestral state computation mode requires a rooted tree as input, exiting ....\n");
+      exit(0);
+    }
+
   if (! treeNeedCh(fp, ')', "in"))                
     assert(0);
 
@@ -1175,7 +1246,13 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
       assert(!readNodeLabels);
 
       p->next->next->back = (nodeptr) NULL;      
-      tr->start = uprootTree(tr, p->next->next, FALSE, FALSE);      
+      tr->start = uprootTree(tr, p->next->next, readBranches, FALSE);      
+
+       
+      /*tr->leftRootNode  = p->back;
+	tr->rightRootNode = p->next->back;   
+      */
+
       if (! tr->start)                              
 	{
 	  printf("FATAL ERROR UPROOTING TREE\n");
@@ -1185,7 +1262,7 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
   else    
     tr->start = findAnyTip(p, tr->rdta->numsp);    
   
-   if(!topologyOnly)
+   if(!topologyOnly || adef->mode == CLASSIFY_MP)
     {
       setupPointerMesh(tr);
 
@@ -1209,11 +1286,17 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
 		  printBothOpen("bifurcating starting trees\n");
 		  exit(-1);
 		}     
-	      if(adef->mode == CLASSIFY_ML)
+	      if(adef->mode == CLASSIFY_ML || adef->mode == CLASSIFY_MP)
 		{	 
-		  printBothOpen("RAxML classifier Algo: You provided a reference tree with %d taxa; alignmnet has %d taxa\n", tr->ntips, tr->mxtips);
-		  printBothOpen("%d query taxa will be classifed under ML\n", tr->mxtips - tr->ntips);
-		  classifyML(tr, adef);	  
+		  printBothOpen("RAxML placement algorithm: You provided a reference tree with %d taxa; alignmnet has %d taxa\n", tr->ntips, tr->mxtips);		  
+		  printBothOpen("%d query taxa will be placed using %s\n", tr->mxtips - tr->ntips, (adef->mode == CLASSIFY_ML)?"maximum likelihood":"parsimony");
+		  if(adef->mode == CLASSIFY_ML)
+		    classifyML(tr, adef);	  
+		  else
+		    {
+		      assert(adef->mode == CLASSIFY_MP);
+		      classifyMP(tr, adef);
+		    }
 		}
 	      else
 		{
@@ -1230,9 +1313,9 @@ int treeReadLen (FILE *fp, tree *tr, boolean readBranches, boolean readNodeLabel
 	      printBothOpen("you have provided an input tree that already contains all taxa\n");
 	      exit(-1);
 	    }
-	  if(adef->mode == CLASSIFY_ML)
+	  if(adef->mode == CLASSIFY_ML || adef->mode == CLASSIFY_MP)
 	    {
-	      printBothOpen("Error you want to classify query sequences into a tree via ML, but \n");
+	      printBothOpen("Error you want to place query sequences into a tree using %s, but\n", tr->mxtips - tr->ntips, (adef->mode == CLASSIFY_ML)?"maximum likelihood":"parsimony");
 	      printBothOpen("you have provided an input tree that already contains all taxa\n");
 	      exit(-1);
 	    }
@@ -1510,13 +1593,34 @@ void getStartingTree(tree *tr, analdef *adef)
                  		
       if(!adef->grouping)	
 	{
-	  if(tr->saveMemory)
-	    treeReadLen(INFILE, tr, FALSE, FALSE, TRUE, adef, FALSE);	          
+	  if(adef->mode == ANCESTRAL_STATES)
+	    {
+	      assert(!tr->saveMemory);
+
+	      tr->leftRootNode  = (nodeptr)NULL;
+	      tr->rightRootNode = (nodeptr)NULL;
+
+	      treeReadLen(INFILE, tr, FALSE, FALSE, FALSE, adef, TRUE);
+
+	      assert(tr->leftRootNode && tr->rightRootNode);
+	    }
 	  else
-	    treeReadLen(INFILE, tr, FALSE, FALSE, FALSE, adef, FALSE);
+	    {
+	      if(adef->mode == CLASSIFY_MP)
+		treeReadLen(INFILE, tr, TRUE, FALSE, TRUE, adef, FALSE);
+	      else
+		{
+		  if(tr->saveMemory)				 
+		    treeReadLen(INFILE, tr, FALSE, FALSE, TRUE, adef, FALSE);	          	       
+		  else		   
+		    treeReadLen(INFILE, tr, FALSE, FALSE, FALSE, adef, FALSE);
+		}
+	    }
 	}
       else
 	{
+	  assert(adef->mode != ANCESTRAL_STATES);
+
 	  partCount = 0;
 	  if (! treeReadLenMULT(INFILE, tr, adef))
 	    exit(-1);
@@ -1525,39 +1629,19 @@ void getStartingTree(tree *tr, analdef *adef)
       if(adef->mode == PARSIMONY_ADDITION)
 	return; 
 
-      {
-	/*
-	  double t = gettime();
-	  int i;	            
-
-	  for(i = 0; i < 50; i++)
-	*/
-	
-	evaluateGenericInitrav(tr, tr->start); 
-
-	
-	/*
-	  printf("%1.40f \n", tr->likelihood); 
-	  printf("%f\n", gettime() - t);
-	*/
-		
-
-	treeEvaluate(tr, 1);
-     
-	/*
-	  printf("%1.40f \n", tr->likelihood);
-	  printf("%f\n", gettime() - t);       
-	  exit(1);
-	*/
-      }
+      if(adef->mode != CLASSIFY_MP)
+	{
+	  evaluateGenericInitrav(tr, tr->start); 			
+	  treeEvaluate(tr, 1);
+	}
                
       fclose(INFILE);
     }
   else
     { 
       assert(adef->mode != PARSIMONY_ADDITION &&
-	     adef->mode != MORPH_CALIBRATOR && 
-	     adef->mode != MORPH_CALIBRATOR_PARSIMONY);
+	     adef->mode != MORPH_CALIBRATOR   &&
+	     adef->mode != ANCESTRAL_STATES);
 
       if(adef->randomStartingTree)	  
 	makeRandomTree(tr, adef);       	   	 	   	  

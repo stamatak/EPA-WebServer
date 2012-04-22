@@ -45,12 +45,13 @@ class RaxmlController < ApplicationController
     initialize_options_mga
     @raxml = Raxml.new
   end
+
   def initialize_options_mga
     models = ["GAMMA","CAT", "CATI","GAMMAI"]
     models.each {|m| @model_options= @model_options+"<option>#{m}</option>"}
     matrices = ["DAYHOFF", "DCMUT", "JTT", "MTREV", "WAG", "RTREV", "CPREV", "VT", "BLOSUM62", "MTMAM", "LG"]
     matrices.each {|m| @matrices= @matrices+"<option>#{m}</option>"}
-    heuristics = ["MP","ML"]
+    heuristics = ["ML"]
     heuristics.each {|h| @heuristics = @heuristics+"<option>#{h}</option>"}
     heuristics_values = ["1/2","1/4","1/8","1/16","1/32","1/64"]
     heuristics_values.each do |h| 
@@ -76,7 +77,7 @@ class RaxmlController < ApplicationController
     matrices.each {|m| @aa_matrices= @aa_matrices+"<option>#{m}</option>"}
     models = ["GAMMA", "GAMMAI", "CAT", "CATI"]
     models.each {|m| @par_model_options= @par_model_options+"<option>#{m}</option>"}
-    heuristics = ["MP","ML"]
+    heuristics = ["ML"]
     heuristics.each {|h| @heuristics = @heuristics+"<option>#{h}</option>"}
     heuristics_values = ["1/2","1/4","1/8","1/16","1/32","1/64"]
     heuristics_values.each do |h| 
@@ -117,44 +118,43 @@ class RaxmlController < ApplicationController
     if !(params[:jobid].nil?)  ## quick hack such that the testing only generates Jobs with the ID 110.
       @jobid  = "110"          #
     end                        #
-    @dna_model_options = ""
-    @aa_model_options = ""
-    @aa_matrices = ""
-    @par_model_options  =""
-    @model_options = ""
-    @matrices = ""
-    @heuristics =""
-    @heuristics_values =""
-    @ip_counter = 0;
+    @dna_model_options  = ""
+    @aa_model_options   = ""
+    @aa_matrices        = ""
+    @par_model_options  = ""
+    @model_options      = ""
+    @matrices           = ""
+    @heuristics         = ""
+    @heuristics_values  = ""
+    @ip_counter         = 0;
     @submission_counter = 0;
     initialize_options
     
-    @direcrory = nil
-    @ip = request.remote_ip
-    @alifile = ""
-    @treefile = params[:treefile][:file]
-    @queryfile = ""
-    @parfile = ""
-    @outfile = ""
-    @query = ""
-    @speed = params[:chSpeed]
-    @substmodel = ""
-    @matrix = nil
-    @sm_float = nil
-    @use_queryfile = params[:qfile]
-    @use_clustering = params[:cluster]
-    @use_bootstrap = params[:chBoot]
-    @use_papara = params[:papara]
-    @b_random_seed = 1234
-    @b_runs = 100
-    @use_heuristic = params[:chHeu]
-    @heuristic = ""
-    @h_value =""
-    @email = params[:rax_email]
+    @direcrory       = nil
+    @ip              = request.remote_ip
+    @alifile         = params[:alifile]
+    @treefile        = params[:treefile]
+    @queryfile       = params[:queryfile]
+    @parfile         = params[:parfile]
+    @outfile         = ""
+    @query           = ""
+   # @speed          = params[:chSpeed]
+    @speed           = "F" # no fast insertion option anymore
+    @substmodel      = ""
+    @matrix          = nil
+    @sm_float        = nil
+    @use_queryfile   = params[:qfile]
+    @use_clustering  = params[:cluster]
+    @use_bootstrap   = params[:chBoot]
+    @use_papara      = params[:papara]
+    @b_random_seed   = 1234
+    @b_runs          = 100
+    @use_heuristic   = params[:chHeu]
+    @heuristic       = ""
+    @h_value         = ""
+    @email           = params[:rax_email]
     @job_description = params[:job_desc].gsub(/\s/,"__"); ### save that nobody enters sql syntax
-
-
-    @mga = "F"
+    @mga             = "F"
 
     # Multi gene mode?
     if params[:modus].eql?("mga")
@@ -171,8 +171,8 @@ class RaxmlController < ApplicationController
         @use_clustering ="F"
       end
       @use_queryfile ="T"
-      @queryfile = params[:raxml][:queryfile]
-      @parfile = params[:raxml][:parfile]
+ #     @queryfile = params[:raxml][:queryfile]
+ #     @parfile = params[:raxml][:parfile]
     # else single gene mode
     else
       # Check Query Type (DNA|AA|PAR)
@@ -186,23 +186,23 @@ class RaxmlController < ApplicationController
         @substmodel = "#{@substmodel}#{@matrix}#{@sm_float}"
       elsif @query.eql?("PAR")
         @substmodel = "GTR#{params[:par_substmodel]}"
-        @parfile = params[:raxml][:parfile]
-      end
-
-      #check if papara is selected and the input is DNA
-      if !@use_papara.eql?("T") || !@query.eql?("DNA")
-        @use_papara = "F"
+#        @parfile = params[:raxml][:parfile]      
       end
 
       # Upload a query read file?
-      if @use_queryfile.eql?("T")
-        @queryfile = params[:raxml][:queryfile]
-      else
+      if !(@use_queryfile.eql?("T"))
+     #   @queryfile = params[:raxml][:queryfile]
+     # else
         @use_queryfile = "F"
       end
 
-      # Cluster uploded reads?
-      if !(@use_clustering.eql?("T"))
+      #check if papara is selected and the input is DNA, upload query reads has to be checked
+      if !@use_papara.eql?("T") || !@query.eql?("DNA") || @use_queryfile.eql?("F")
+        @use_papara = "F"
+      end
+
+      # Cluster uploded reads? Upload query reads has to be checked
+      if !(@use_clustering.eql?("T")) || @use_queryfile.eql?("F")
         @use_clustering ="F"
       end
     end
@@ -230,7 +230,30 @@ class RaxmlController < ApplicationController
     end
    
      buildJobDir
-    @raxml = Raxml.new({ :alifile =>params[:raxml][:alifile] , :query => @query, :outfile => @outfile, :speed => @speed, :substmodel => @substmodel, :heuristic => @heuristic, :treefile => @treefile, :email => @email, :h_value => @h_value, :errorfile => "", :use_heuristic => @use_heuristic, :use_bootstrap => @use_bootstrap, :b_random_seed => @b_random_seed, :b_runs => @b_runs , :parfile => @parfile, :use_queryfile => @use_queryfile, :queryfile => @queryfile, :use_clustering => @use_clustering, :jobid => @jobid, :user_ip => @ip, :job_description => @job_description, :status => "running" , :mga => @mga, :use_papara => @use_papara})
+    @raxml = Raxml.new({ :alifile         => @alifile ,
+                         :query           => @query, 
+                         :outfile         => @outfile, 
+                         :speed           => @speed, 
+                         :substmodel      => @substmodel, 
+                         :heuristic       => @heuristic, 
+                         :treefile        => @treefile, 
+                         :email           => @email, 
+                         :h_value         => @h_value, 
+                         :errorfile       => "", 
+                         :use_heuristic   => @use_heuristic, 
+                         :use_bootstrap   => @use_bootstrap, 
+                         :b_random_seed   => @b_random_seed, 
+                         :b_runs          => @b_runs , 
+                         :parfile         => @parfile, 
+                         :use_queryfile   => @use_queryfile, 
+                         :queryfile       => @queryfile, 
+                         :use_clustering  => @use_clustering, 
+                         :jobid           => @jobid, 
+                         :user_ip         => @ip, 
+                         :job_description => @job_description, 
+                         :status          => "running" , 
+                         :mga             => @mga, 
+                         :use_papara      => @use_papara})
     
     if @raxml.save
       @raxml.update_attribute(:outfile,"#{@raxml.jobid}")

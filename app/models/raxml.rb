@@ -47,8 +47,8 @@ class Raxml < ActiveRecord::Base
   ## custom validator function that checks the file formats of the uploaded Alignemntfile , Treefile, Partitionfile and the Sequencefile with the unaligned reads.
   def validate
     jobdir = "#{RAILS_ROOT}/public/jobs/#{self.jobid}/"
-    if !(self.alifile.eql?("")) && !(self.treefile.eql?(""))
-      a = RaxmlAlignmentfileParser.new(self.alifile)
+    if (!(self.alifile.eql?("")) && !(self.treefile.eql?(""))) &&  (!(self.alifile.nil?) && !(self.treefile.nil?))
+      a = RaxmlAlignmentfileParser.new(self.alifile, self.substmodel, self.parfile)
       errors.add(:alifile, a.error) if !(a.valid_format)
       if a.valid_format
         alifile_path =  jobdir+"alignment_file"
@@ -64,7 +64,7 @@ class Raxml < ActiveRecord::Base
           self.treefile = treefile_path
       end
 
-      if (self.query.eql?("PAR") && !(self.parfile.eql?("") )) || self.mga.eql?("T")
+      if ((self.query.eql?("PAR") && !(self.parfile.eql?("") )) || self.mga.eql?("T")) && ((self.query.nil? && !(self.parfile.nil?)) || self.mga.eql?("T")) 
         p = RaxmlPartitionfileParser.new(self.parfile,a.ali_length)
         errors.add(:parfile, p.error) if !(p.valid_format)
         if p.valid_format
@@ -73,7 +73,7 @@ class Raxml < ActiveRecord::Base
           self.parfile = parfile_path
         end
       end
-      if (self.use_queryfile.eql?("T") && !(self.queryfile.eql?(""))) || self.mga.eql?("T")
+      if ((self.use_queryfile.eql?("T") && !(self.queryfile.eql?(""))) || self.mga.eql?("T")) && ((self.use_queryfile.nil? && !(self.queryfile.nil?)) || self.mga.eql?("T"))
         q = RaxmlQueryfileParser.new(self.queryfile)
         errors.add(:queryfile, q.error) if !(q.valid_format) 
         if q.valid_format
@@ -110,31 +110,37 @@ class Raxml < ActiveRecord::Base
       opts["-q"] = self.parfile
     end
     if self.use_heuristic.eql?("T")
-      if self.heuristic.eql?("MP")
-        if self.h_value =~ /(1)\/(\d+)/
-          opts["-H"] = (($1.to_f)/($2.to_f)).to_s
-        end
-      elsif self.heuristic.eql?("ML")
+     # if self.heuristic.eql?("MP")
+     #   if self.h_value =~ /(1)\/(\d+)/
+     #     opts["-H"] = (($1.to_f)/($2.to_f)).to_s
+     #   end
+    #  elsif self.heuristic.eql?("ML")
         if self.h_value =~ /(1)\/(\d+)/
           opts["-G"] = (($1.to_f)/($2.to_f)).to_s
         end
       end
-    elsif self.use_bootstrap.eql?("T")
-      opts["-x"] = self.b_random_seed
-      opts["-N"] = self.b_runs
-    end
+ #   elsif self.use_bootstrap.eql?("T")
+ #     opts["-x"] = self.b_random_seed
+ #     opts["-N"] = self.b_runs
+ #   end
     if self.use_queryfile.eql?("T")
       opts["-useQ"] = self.queryfile
+      if self.use_clustering.eql?("T")
+        opts["-useCl"] = ""
+      end
+      if self.use_papara.eql?("T")
+        opts["-papara"] = ""
+      end
     end
-    if self.use_clustering.eql?("T")
-      opts["-useCl"] = ""
-    end
+  #  if self.use_clustering.eql?("T")
+  #    opts["-useCl"] = ""
+  #  end
     if self.mga.eql?("T")
       opts["-mga"] = ""
     end
-    if self.use_papara.eql?("T")
-      opts["-papara"] = ""
-    end
+ #   if self.use_papara.eql?("T")
+ #     opts["-papara"] = ""
+ #   end
     cores = parseDescription(self.job_description)
     if cores > 1
       opts["-T"] = cores

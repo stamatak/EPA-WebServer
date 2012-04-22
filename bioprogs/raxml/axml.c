@@ -80,354 +80,21 @@
 
 /***************** UTILITY FUNCTIONS **************************/
 
-#ifdef _IPTOL
 
-#include "dmtcpaware.h"
-
-static void dmtcpWriteCheckpoint()
-{      
-  if(dmtcpIsEnabled())
-    { 
-      int r;
-      double t;
-      
-      printf(" dmtcp start checkpointing\n");
-      t = gettime();
-      r = dmtcpCheckpoint();
-      
-      if(r<=0)  
-	printf("Error, checkpointing failed: %d\n",r);
-      
-      if(r==1)
-	printf("***** after checkpoint *****\n");
-      
-      if(r==2)
-	printf("***** after restart *****\n");
-      
-      printf(" dmtcp end checkpointing: %f seconds\n", gettime() - t);
-    }
-  else   
-    printf("WARNING: dmtcp disabled -- no checkpointing available\n");   
-}
-
-
-void writeCheckpoint(analdef *adef)
+double FABS(double x)
 {
-  double 
-    delta,
-    t = gettime();
+  /*  if(x < -1.0E-10)
+      assert(0);*/
+  
+  /* if(x < 0.0)
+     printf("%1.40f\n", x); */
 
-  if((delta = (t - lastCheckpointTime)) > checkPointInterval)
-    {
-      printf("Writing Checkpoint after %f\n", delta);
-      lastCheckpointTime = t;
-      dmtcpWriteCheckpoint();
-    }
-
+  return fabs(x);
 }
 
-#endif
-
-#ifdef _USE_FPGA_LOG
-
-double *temp_lut, 
-  con_val, 
-  value_minus_inf,
-  value_nan,
-  value_inf;
-
-
-typedef union
-{
-  double value;
-  
-  struct
-  {
-    unsigned int rght_p;
-    unsigned int lft_p;
-  } 
-    parts;
-  
-} ieee_double_shape_type;
-
-static void log_approx_init (int bits_num)
-{	
-  int  
-    man_LUT_sz = pow(2, bits_num),
-    i = 0,
-    y = 0;  	
-
-  double 
-    log_mant = 0.0,
-    temp_sum = 0.0;	
-
-  unsigned int   
-    t = 0,
-    div_i = 0,
-    temp_arr2[32],
-    temp_arr[32];
-
-  con_val = log(2);
-  value_minus_inf = -1.0 / 0.0;
-  value_nan = 0.0 / 0.0;
-  value_inf = pow(10, 308);
-  temp_lut = (double*)malloc(sizeof(double) * man_LUT_sz);
-
-	
-  for (t = 0; t < man_LUT_sz; t++)
-    {
-      div_i = t;		
-      for (i = 0; i < 32; i++)
-	{
-	  temp_arr[i] = div_i & 1;
-	  div_i = div_i >> 1;
-	}
-	
-      for(i = 31, y = 0;i > -1; i--, y++)
-	temp_arr2[y]=temp_arr[i];
-
-      temp_sum =0.0;
-      
-      for(i = 31; i > (31 - bits_num); i--)	
-	temp_sum = temp_sum + temp_arr2[i] / pow(2, -31 + i + bits_num);	
-
-      log_mant = log(1.0 + temp_sum);
-      temp_sum = 0.0;
-
-      temp_lut[t] = log_mant;
-    }		
-}
-
-
-static double get_dec_exp (unsigned int input)
-{
-  input = ((input << 1) >> 21);	
-  return (input - 1023.0);	
-}
-
-static double get_log_mant (unsigned int input , int bits_num)
-{		
-  input = (input << 12) >> (12 + 20 - bits_num);	
-  return temp_lut[input];	
-}
-
-double log_approx (double input)
-{	
-  double result;
-
-  ieee_double_shape_type model_input;
-  
-  model_input.value = input;	
-  
-  if(input<0)    
-    result = value_nan;    
-  else    
-    if(input==0)	
-      result = value_minus_inf;	
-    else
-      {			
-	if(input > value_inf)	   
-	  result = value_inf + value_inf;	    
-	else	    
-	  result = con_val * get_dec_exp(model_input.parts.lft_p) + get_log_mant(model_input.parts.lft_p, 12);
-	 
-      }
-	
-  return result;
-}
-
-
-#endif
-
-#ifdef _USE_FPGA_EXP
-
-#define arg_FPGAexp   12
-#define lutsz_FPGAexp 4096
-
-#define sin_lo_bo  103 /* single lower input bound (-103)*/
-#define sin_up_bo  88  /* single upper input dound */
-
-
-float as_FPGAexp[25];
-float pow_FPGAexp[sin_lo_bo+sin_up_bo];
-float lut_FPGAexp[lutsz_FPGAexp];
-
-unsigned int constAND_FPGAexp = 2155872255;
-
-typedef union
-{
-  float value;
-  struct  {  unsigned int lft_p; } parts;  
-} ieee_single_shape_type_exp;
-
-
-static float div2_FPGAexp (float input)
-{
-   ieee_single_shape_type_exp 
-     input_arg;
-   
-   unsigned int 
-     tmp;
-   
-   input_arg.value = input;
-
-   tmp = ((input_arg.parts.lft_p << 1) >>24);
-   
-   tmp = tmp - 1;
-   tmp = tmp << 23;
-   
-   input_arg.parts.lft_p = tmp | (input_arg.parts.lft_p & constAND_FPGAexp);
-
-   return input_arg.value;    
-}
-
-
-static unsigned int *fillBitVec_FPGAexp (int input)
-{
-  unsigned int 
-    *tws = (unsigned int*)malloc(sizeof(unsigned int) * arg_FPGAexp),
-    tmp=0;
-  
-  int 
-    i = 0;
- 
-  for(i = arg_FPGAexp - 1; i > -1; i--)
-    {
-      tmp = input & 1;
-      tws[i] = tmp;
-      input = input >> 1;     
-    }
-  
-  return tws;
-}
-
-
-
-static void exp_approx_init(void)
-{
-  int 
-    i = 0,
-    j = 0;
-  
-  float 
-    part_mult = 1.0;
-  
-  double 
-    e = 2.718281828459045;
-  
-  unsigned int 
-    *tws;
-  
-  ieee_single_shape_type_exp 
-    tmpval;
- 
-  /* Initialization of FPGAexpLUT */
-  
-  as_FPGAexp[0]  =  1.648721270700128;
-  as_FPGAexp[1]  =  1.284025416687742; 
-  as_FPGAexp[2]  =  1.133148453066826; 
-  as_FPGAexp[3]  =  1.064494458917859; 
-  as_FPGAexp[4]  =  1.031743407499103; 
-  as_FPGAexp[5]  =  1.015747708586686; 
-  as_FPGAexp[6]  =  1.007843097206488; 
-  as_FPGAexp[7]  =  1.003913889338348; 
-  as_FPGAexp[8]  =  1.001955033591003; 
-  as_FPGAexp[9]  =  1.000977039492417; 
-  as_FPGAexp[10] =  1.000488400478694; 
-  as_FPGAexp[11] =  1.000244170429748; 
-  as_FPGAexp[12] =  1.000122077763384; 
-  
- /* 
-    as_FPGAexp[13] =  1.000061037018933; 
-    as_FPGAexp[14] =  1.000030518043791; 
-    as_FPGAexp[15] =  1.0000152589054785; 
-    as_FPGAexp[16] =  1.0000076294236351; 
-    as_FPGAexp[17] =  1.0000038147045416; 
-    as_FPGAexp[18] =  1.0000019073504518; 
-    as_FPGAexp[19] =  1.0000009536747712; 
-    as_FPGAexp[20] =  1.0000004768372719; 
-    as_FPGAexp[21] =  1.0000002384186075; 
-    as_FPGAexp[22] =  1.0000001192092967; 
-    as_FPGAexp[23] =  1.0000000596046466; 
-    as_FPGAexp[24] =  1.0000000298023228;
- */
-
-  for(i = 0; i < sin_lo_bo + sin_up_bo; i++)  
-    pow_FPGAexp[i] = (float)pow(e, i - sin_lo_bo); 
-  
-  for(i = 0; i < lutsz_FPGAexp; i++)
-    {
-      tws = fillBitVec_FPGAexp(i);
-      part_mult = 1.0;
-
-      for(j = 0; j < arg_FPGAexp; j++)	
-	if(1 == tws[j])   	    
-	  part_mult *= as_FPGAexp[j];
-	            
-      tmpval.value = part_mult;
-      tmpval.parts.lft_p = (tmpval.parts.lft_p >> 5) << 5; 
-      lut_FPGAexp[i] = tmpval.value;
-    }
-}
-
-
-/* 
-   Unit Evaluation:
-   maximum 30DSPs    6 DSPs standard + X more
-   4 BRAMs of 36KBs
-   1 BRAM of 18Kbs or distributed memory
-   latency 164 cycles
-*/
-
-
-double exp_approx(double x)
-{
-  int 
-    i,
-    x_int,
-    wsint = 0;
-  
-  float 
-    poweroftwos,
-    zs, 
-    fxs; 
-  
-  x_int = (int)(floor(x));			/* Xilinx Floating Point Operator : float2fixed */
-
-  zs = ((float)x) - ((float)x_int); 		/* single precision sub */
-
-  poweroftwos = 0.5;  				/* 32bit register */
-  wsint = 0; 
-
-  for(i = 0; i < arg_FPGAexp; i++)		/* 12 iterations */
-  {		                             	
-    wsint = wsint << 1;				/* 12 bit vector */
-    
-    if(poweroftwos < zs)             	        /* comparator */
-      {    
-	wsint = wsint | 1 ;      
-	zs = zs - poweroftwos;            	/* sub */
-      }
-
-    poweroftwos = div2_FPGAexp(poweroftwos);	/* as constant on the port b of the comps */
-  }
-  
-  fxs = lut_FPGAexp[wsint];			/* 1 LUT */
-
-  fxs = fxs * ( 1.0 + zs );			/* 1 add 1 mult	*/
-
-  fxs=fxs * pow_FPGAexp[x_int+sin_lo_bo];       /* adder , lut and mult */
-
-  return ((double)fxs); 
-}
-
-#endif
-
-
-void *malloc_aligned(size_t size) 
+void *malloc_aligned(size_t size, size_t align) 
 {
   void *ptr = (void *)NULL;
-  const size_t align = 16;
   int res;
   
 
@@ -436,6 +103,8 @@ void *malloc_aligned(size_t size)
      presumably malloc on MACs always returns 
      a 16-byte aligned pointer
   */
+
+  assert(align == 16);
 
   ptr = malloc(size);
   
@@ -448,6 +117,18 @@ void *malloc_aligned(size_t size)
   if(res != 0) 
     assert(0);
 #endif 
+
+  /*
+    to ensure that the allocated pages are mapped 
+    correctly on the distributed shared memory system:
+
+    for(i=0; i<N; i++) 
+    // or i+=PAGE_SIZE
+    huge[i] = 0.0; // mapping takes place here!
+    
+
+   */
+
    
   return ptr;
 }
@@ -611,7 +292,6 @@ static boolean isGamma(analdef *adef)
     return TRUE;
   else
     return FALSE;
-
 }
 
 
@@ -704,14 +384,17 @@ static void setRateHetAndDataIncrement(tree *tr, analdef *adef)
       tr->discreteRateCategories = 4;      
       break;
     case CAT:
-      if((adef->boot && !adef->bootstrapBranchLengths) || (adef->mode == CLASSIFY_ML) || (tr->catOnly))
-	tr->discreteRateCategories = 1; 
+      if((adef->boot && !adef->bootstrapBranchLengths) || (adef->mode == CLASSIFY_ML) || (tr->catOnly))	
+	tr->discreteRateCategories = 1; 	
       else
 	tr->discreteRateCategories = 4;
       break;
     default:
       assert(0);
     }
+
+  if(adef->bootstrapBranchLengths)
+    assert(tr->discreteRateCategories == 4);
 
   for(model = 0; model < tr->NumberOfModels; model++)
     {
@@ -798,7 +481,7 @@ double randum (long  *seed)
   return res;
 }
 
-static int filexists(char *filename)
+int filexists(char *filename)
 {
   FILE *fp;
   int res;
@@ -1215,8 +898,6 @@ static boolean setupTree (tree *tr, analdef *adef)
   tr->ntips       = 0;
   tr->nextnode    = 0;
 
-  
-
   if(!adef->readTaxaOnly)
     {
       for(i = 0; i < tr->numBranches; i++)
@@ -1249,6 +930,7 @@ static void checkTaxonName(char *buffer, int len)
 	case ';':
 	case '[':
 	case ']':
+	case '\'':
 	  valid = FALSE;
 	  break;
 	default:
@@ -1258,7 +940,7 @@ static void checkTaxonName(char *buffer, int len)
       if(!valid)
 	{
 	  printf("ERROR: Taxon Name \"%s\" is invalid at position %d, it contains illegal character %c\n", buffer, i, buffer[i]);
-	  printf("Illegal characters in taxon-names are: tabulators, carriage returns, spaces, \":\", \",\", \")\", \"(\", \";\", \"]\", \"[\"\n");
+	  printf("Illegal characters in taxon-names are: tabulators, carriage returns, spaces, \":\", \",\", \")\", \"(\", \";\", \"]\", \"[\", \"\'\" \n");
 	  printf("Exiting\n");
 	  exit(-1);
 	}
@@ -1632,18 +1314,12 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
       cdta->rateCategory    = (int *)    malloc((rdta->sites + 1) * sizeof(int));
       tr->model             = (int *)    calloc((rdta->sites + 1), sizeof(int));
       tr->initialDataVector  = (int *)    malloc((rdta->sites + 1) * sizeof(int));
-      tr->extendedDataVector = (int *)    malloc((rdta->sites + 1) * sizeof(int));
-      cdta->wr              = (double *) malloc((rdta->sites + 1) * sizeof(double));
-      cdta->wr2             = (double *) malloc((rdta->sites + 1) * sizeof(double));
+      tr->extendedDataVector = (int *)    malloc((rdta->sites + 1) * sizeof(int));     
       cdta->patrat          = (double *) malloc((rdta->sites + 1) * sizeof(double));
-      cdta->patratStored    = (double *) malloc((rdta->sites + 1) * sizeof(double));
+      cdta->patratStored    = (double *) malloc((rdta->sites + 1) * sizeof(double));      
+      tr->wr                = (double *) malloc((rdta->sites + 1) * sizeof(double)); 
+      tr->wr2               = (double *) malloc((rdta->sites + 1) * sizeof(double)); 
 
-
-      if(adef->useFloat)
-	{
-	  cdta->wr_FLOAT    = (float *) malloc((rdta->sites + 1) * sizeof(float));
-	  cdta->wr2_FLOAT   = (float *) malloc((rdta->sites + 1) * sizeof(float));
-	}
 
       if(!adef->useWeightFile)
 	{
@@ -1667,6 +1343,8 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
 	  int ref;
 	  
 	  parsePartitions(adef, rdta, tr);
+
+	  printf("NUM models: %d\n", tr->NumberOfModels);
 	  
 	  for(i = 1; i <= rdta->sites; i++)
 	    {
@@ -1676,16 +1354,21 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
 	}
       else
 	{
-	  int dataType = -1;
+	  int 
+	    dataType = -1;
 	  
 	  tr->initialPartitionData  = (pInfo*)malloc(sizeof(pInfo));
 	  tr->initialPartitionData[0].partitionName = (char*)malloc(128 * sizeof(char));
 	  strcpy(tr->initialPartitionData[0].partitionName, "No Name Provided");
 	  
 	  tr->initialPartitionData[0].protModels = adef->proteinMatrix;
-	  tr->initialPartitionData[0].protFreqs  = adef->protEmpiricalFreqs;
+	  if(adef->protEmpiricalFreqs)
+	    tr->initialPartitionData[0].usePredefinedProtFreqs  = FALSE;
+	  else
+	    tr->initialPartitionData[0].usePredefinedProtFreqs  = TRUE;
 	  
 	  
+
 	  tr->NumberOfModels = 1;
 	  
 	  if(adef->model == M_PROTCAT || adef->model == M_PROTGAMMA)
@@ -1706,6 +1389,13 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
 
 	  tr->initialPartitionData[0].dataType = dataType;
 	  
+	  if(dataType == AA_DATA && adef->userProteinModel)
+	    {
+	      tr->initialPartitionData[0].protModels = PROT_FILE;
+	      tr->initialPartitionData[0].usePredefinedProtFreqs  = TRUE;
+	      strcpy(tr->initialPartitionData[0].proteinSubstitutionFileName, proteinModelFileName);
+	    }
+	  
 	  for(i = 0; i <= rdta->sites; i++)
 	    {
 	      tr->initialDataVector[i] = dataType;
@@ -1723,10 +1413,10 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
 	    {
 	      tr->extendedPartitionData[i].partitionName = (char*)malloc((strlen(tr->initialPartitionData[i].partitionName) + 1) * sizeof(char));
 	      strcpy(tr->extendedPartitionData[i].partitionName, tr->initialPartitionData[i].partitionName);
-	      tr->extendedPartitionData[i].dataType   = tr->initialPartitionData[i].dataType;
-	      
+	      strcpy(tr->extendedPartitionData[i].proteinSubstitutionFileName, tr->initialPartitionData[i].proteinSubstitutionFileName);
+	      tr->extendedPartitionData[i].dataType   = tr->initialPartitionData[i].dataType;	      
 	      tr->extendedPartitionData[i].protModels = tr->initialPartitionData[i].protModels;
-	      tr->extendedPartitionData[i].protFreqs  = tr->initialPartitionData[i].protFreqs;
+	      tr->extendedPartitionData[i].usePredefinedProtFreqs  = tr->initialPartitionData[i].usePredefinedProtFreqs;
 	    }
 	  
 	  parseSecondaryStructure(tr, adef, rdta->sites);
@@ -1739,6 +1429,14 @@ static void getinput(analdef *adef, rawdata *rdta, cruncheddata *cdta, tree *tr)
 	  tr->dataVector    = tr->initialDataVector;
 	  tr->partitionData = tr->initialPartitionData;
 	}
+     
+      
+
+      for(i = 0; i < tr->NumberOfModels; i++)
+	if(tr->partitionData[i].dataType == AA_DATA && tr->partitionData[i].protModels == PROT_FILE)
+	  parseProteinModel(tr->partitionData[i].externalAAMatrix, tr->partitionData[i].proteinSubstitutionFileName);
+      
+      
 
       tr->executeModel   = (boolean *)malloc(sizeof(boolean) * tr->NumberOfModels);
 
@@ -1802,7 +1500,7 @@ static unsigned char buildStates(int secModel, unsigned char v1, unsigned char v
 	meaningDNA['A'] =  1;
 	meaningDNA['B'] = 14;
 	meaningDNA['C'] =  2;
- 	meaningDNA['D'] = 13;
+	meaningDNA['D'] = 13;
 	meaningDNA['G'] =  4;
 	meaningDNA['H'] = 11;
 	meaningDNA['K'] = 12;
@@ -2066,7 +1764,6 @@ static void sitesort(rawdata *rdta, cruncheddata *cdta, tree *tr, analdef *adef)
 		     
 		      flip = (category[jj] > category[jg]);
 		      tied = (category[jj] == category[jg]);		     
-
 		    }
 		  else
 		    {
@@ -2112,7 +1809,7 @@ static void sitecombcrunch (rawdata *rdta, cruncheddata *cdta, tree *tr, analdef
   cdta->alias[0]    = cdta->alias[1];
   cdta->aliaswgt[0] = 0;
 
-  if(adef->mode == PER_SITE_LL)
+  if(adef->mode == PER_SITE_LL || adef->mode == ANCESTRAL_STATES)
     {
       int i;
 
@@ -2152,7 +1849,7 @@ static void sitecombcrunch (rawdata *rdta, cruncheddata *cdta, tree *tr, analdef
 
       if (tied)
 	{
-	  if(adef->mode == PER_SITE_LL)
+	  if(adef->mode == PER_SITE_LL || adef->mode == ANCESTRAL_STATES)
 	    {
 	      tr->patternPosition[j - 1] = i;
 	      tr->columnPosition[j - 1] = sitej;
@@ -2171,7 +1868,7 @@ static void sitecombcrunch (rawdata *rdta, cruncheddata *cdta, tree *tr, analdef
 	{
 	  if (cdta->aliaswgt[i] > 0) i++;
 
-	  if(adef->mode == PER_SITE_LL)
+	  if(adef->mode == PER_SITE_LL || adef->mode == ANCESTRAL_STATES)
 	    {
 	      tr->patternPosition[j - 1] = i;
 	      tr->columnPosition[j - 1] = sitej;
@@ -2191,7 +1888,7 @@ static void sitecombcrunch (rawdata *rdta, cruncheddata *cdta, tree *tr, analdef
   cdta->endsite = i;
   if (cdta->aliaswgt[i] > 0) cdta->endsite++;
 
-  if(adef->mode == PER_SITE_LL)
+  if(adef->mode == PER_SITE_LL || adef->mode == ANCESTRAL_STATES)
     {
       for(i = 0; i < rdta->sites; i++)
 	{
@@ -2269,9 +1966,9 @@ static boolean makevalues(rawdata *rdta, cruncheddata *cdta, tree *tr, analdef *
       i            = 1;
 
       while(i <  cdta->endsite)
-	{
+	{	  
 	  if(tr->model[i] != model)
-	    {
+	    {	     
 	      tr->partitionData[modelCounter].upper     = i;
 	      tr->partitionData[modelCounter + 1].lower = i;
 
@@ -2280,7 +1977,6 @@ static boolean makevalues(rawdata *rdta, cruncheddata *cdta, tree *tr, analdef *
 	    }
 	  i++;
 	}
-
 
       tr->partitionData[tr->NumberOfModels - 1].upper = cdta->endsite;      
     
@@ -2645,13 +2341,19 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
 			{
 			case AA_DATA:
 			  {
-			    char AAmodel[1024];
+			    char 
+			      AAmodel[1024];
 
-			    strcpy(AAmodel, protModels[tr->partitionData[i].protModels]);
-			    if(tr->partitionData[i].protFreqs)
-			      strcat(AAmodel, "F");
-
-			    fprintf(newFile, "%s, ", AAmodel);
+			    if(tr->partitionData[i].protModels != PROT_FILE)
+			      {
+				strcpy(AAmodel, protModels[tr->partitionData[i].protModels]);
+				if(tr->partitionData[i].usePredefinedProtFreqs == FALSE)
+				  strcat(AAmodel, "F");
+				
+				fprintf(newFile, "%s, ", AAmodel);
+			      }
+			    else
+			      fprintf(newFile, "[%s], ", tr->partitionData[i].proteinSubstitutionFileName);
 			  }
 			  break;
 			case DNA_DATA:
@@ -2785,7 +2487,7 @@ static void generateBS(tree *tr, analdef *adef)
 
   for(i = 0; i < adef->multipleRuns; i++)
     {
-      computeNextReplicate(tr, &adef->boot, (int*)NULL, (int*)NULL, FALSE);
+      computeNextReplicate(tr, &adef->boot, (int*)NULL, (int*)NULL, FALSE, FALSE);
 
       count = 0;
       for(j = 0; j < tr->cdta->endsite; j++)
@@ -2932,56 +2634,58 @@ static void allocPartitions(tree *tr)
     i,
     maxCategories = tr->maxCategories;
 
+ 
+
+
   for(i = 0; i < tr->NumberOfModels; i++)
     {
       const partitionLengths *pl = getPartitionLengths(&(tr->partitionData[i]));
 
+      size_t
+	k,
+	width = tr->partitionData[i].width;      
+
+      tr->partitionData[i].perSiteAAModel = (int *)malloc(sizeof(int) * width);
+      for(k = 0; k < width; k++)
+	tr->partitionData[i].perSiteAAModel[k] = WAG;
+      
+
+      tr->partitionData[i].wr = (double *)malloc(sizeof(double) * width);
+      tr->partitionData[i].wr2 = (double *)malloc(sizeof(double) * width);
+
+     
+
       if(tr->useFastScaling)
 	{
-#ifdef _SECURE_SCALING
-	  tr->partitionData[i].globalScalerDouble    = (double *)calloc(2 * tr->mxtips, sizeof(double));
-#else
-	  tr->partitionData[i].globalScaler    = (unsigned int *)calloc(2 * tr->mxtips, sizeof(unsigned int));
-#endif	  
-	  
+	  tr->partitionData[i].globalScaler    = (unsigned int *)calloc(2 * tr->mxtips, sizeof(unsigned int));  	  
 	}
 
-      tr->partitionData[i].left              = (double *)malloc_aligned(pl->leftLength * maxCategories * sizeof(double));
-      tr->partitionData[i].right             = (double *)malloc_aligned(pl->rightLength * maxCategories * sizeof(double));
+      tr->partitionData[i].left              = (double *)malloc_aligned(pl->leftLength * maxCategories * sizeof(double), 16);
+      tr->partitionData[i].right             = (double *)malloc_aligned(pl->rightLength * maxCategories * sizeof(double), 16);
       tr->partitionData[i].EIGN              = (double*)malloc(pl->eignLength * sizeof(double));
-      tr->partitionData[i].EV                = (double*)malloc_aligned(pl->evLength * sizeof(double));
+      tr->partitionData[i].EV                = (double*)malloc_aligned(pl->evLength * sizeof(double), 16);
       tr->partitionData[i].EI                = (double*)malloc(pl->eiLength * sizeof(double));
       tr->partitionData[i].substRates        = (double *)malloc(pl->substRatesLength * sizeof(double));
       tr->partitionData[i].frequencies       = (double*)malloc(pl->frequenciesLength * sizeof(double));
-      tr->partitionData[i].tipVector         = (double *)malloc_aligned(pl->tipVectorLength * sizeof(double));
+      tr->partitionData[i].tipVector         = (double *)malloc_aligned(pl->tipVectorLength * sizeof(double), 16);
       tr->partitionData[i].symmetryVector    = (int *)malloc(pl->symmetryVectorLength  * sizeof(int));
       tr->partitionData[i].frequencyGrouping = (int *)malloc(pl->frequencyGroupingLength  * sizeof(int));
+      tr->partitionData[i].perSiteRates      = (double *)malloc(sizeof(double) * tr->maxCategories);
+      
       
       tr->partitionData[i].nonGTR = FALSE;
        
-      if(tr->useFloat)
-	{	     
-	  tr->partitionData[i].EV_FLOAT          = (float *)malloc_aligned(pl->evLength * sizeof(float));
-	  tr->partitionData[i].tipVector_FLOAT   = (float *)malloc_aligned(pl->tipVectorLength * sizeof(float));
-	  tr->partitionData[i].left_FLOAT        = (float *)malloc_aligned(pl->leftLength * maxCategories * sizeof(float));
-	  tr->partitionData[i].right_FLOAT       = (float *)malloc_aligned(pl->rightLength * maxCategories * sizeof(float));
-	}     
+      
 
       tr->partitionData[i].gammaRates = (double*)malloc(sizeof(double) * 4);
       tr->partitionData[i].yVector = (unsigned char **)malloc(sizeof(unsigned char*) * (tr->mxtips + 1));
 
-      if(!tr->useFloat)
-	{
-	  tr->partitionData[i].xVector = (double **)malloc(sizeof(double*) * tr->innerNodes);
-	  if(tr->saveMemory)
-	    tr->partitionData[i].xSpaceVector = (int *)calloc(tr->innerNodes, sizeof(int));
-	}
-      else
-	tr->partitionData[i].xVector_FLOAT = (float **)malloc(sizeof(float*) * tr->innerNodes);
-
-      tr->partitionData[i].pVector = (parsimonyVector **)malloc(sizeof(parsimonyVector*) * tr->innerNodes);
-      if(!tr->useFastScaling)
-	tr->partitionData[i].expVector = (int **)malloc(sizeof(int*) * tr->innerNodes);
+           
+      tr->partitionData[i].xVector = (double **)malloc(sizeof(double*) * tr->innerNodes);     
+      tr->partitionData[i].xSpaceVector = (size_t *)calloc(tr->innerNodes, sizeof(size_t));	
+           
+      tr->partitionData[i].expVector      = (int **)malloc(sizeof(int*) * tr->innerNodes);
+      tr->partitionData[i].expSpaceVector = (size_t *)calloc(tr->innerNodes, sizeof(size_t));
 
       tr->partitionData[i].mxtips  = tr->mxtips;
 
@@ -3013,121 +2717,63 @@ static void allocNodex (tree *tr)
     model,
     offset,
     memoryRequirements = 0;
-  int    
-    *expArray = (int*)NULL;
-
-  double *likelihoodArray = (double*)NULL;
-  float  *likelihoodArray_FLOAT = (float*)NULL;  
 
   allocPartitions(tr);
 
-
-
   for(model = 0; model < (size_t)tr->NumberOfModels; model++)
     {
-      size_t width = tr->partitionData[model].upper - tr->partitionData[model].lower;
+      size_t 
+	width = tr->partitionData[model].upper - tr->partitionData[model].lower;
 
-      memoryRequirements += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;  
+      int 
+	undetermined, 
+	j;
+
+      memoryRequirements += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;              
+	
+      tr->partitionData[model].gapVectorLength = ((int)width / 32) + 1;
       
-      {
-	int 
-	  undetermined, 
-	  j;
-	
-	tr->partitionData[model].gapVectorLength = ((int)width / 32) + 1;
-	
-	tr->partitionData[model].gapVector = (unsigned int*)calloc(tr->partitionData[model].gapVectorLength * 2 * tr->mxtips, sizeof(unsigned int));
+      tr->partitionData[model].gapVector = (unsigned int*)calloc(tr->partitionData[model].gapVectorLength * 2 * tr->mxtips, sizeof(unsigned int));
 
 
-	tr->partitionData[model].initialGapVectorSize = tr->partitionData[model].gapVectorLength * 2 * tr->mxtips * sizeof(int);
+      tr->partitionData[model].initialGapVectorSize = tr->partitionData[model].gapVectorLength * 2 * tr->mxtips * sizeof(int);
 	
-	tr->partitionData[model].gapColumn = (double *)malloc_aligned(((size_t)tr->innerNodes) *
-								      ((size_t)(tr->discreteRateCategories)) * 
-								      ((size_t)(tr->partitionData[model].states)) *
-								      sizeof(double));		  		
+      tr->partitionData[model].gapColumn = (double *)malloc_aligned(((size_t)tr->innerNodes) *
+								    ((size_t)(tr->discreteRateCategories)) * 
+								    ((size_t)(tr->partitionData[model].states)) *
+								    sizeof(double), 16);		  		
 	
-	undetermined = getUndetermined(tr->partitionData[model].dataType);
+      undetermined = getUndetermined(tr->partitionData[model].dataType);
 
-	for(j = 1; j <= tr->mxtips; j++)
-	  for(i = 0; i < width; i++)
-	    if(tr->partitionData[model].yVector[j][i] == undetermined)
-	      tr->partitionData[model].gapVector[tr->partitionData[model].gapVectorLength * j + i / 32] |= mask32[i % 32];
-      }
- 
+      for(j = 1; j <= tr->mxtips; j++)
+	for(i = 0; i < width; i++)
+	  if(tr->partitionData[model].yVector[j][i] == undetermined)
+	    tr->partitionData[model].gapVector[tr->partitionData[model].gapVectorLength * j + i / 32] |= mask32[i % 32];      
     }
 
   tr->perSiteLL       = (double *)malloc((size_t)tr->cdta->endsite * sizeof(double));
   assert(tr->perSiteLL != NULL);
 
-  
-
-  if(!tr->multiGene)
-    {
-      if(!tr->useFloat)
-	{
-	  if(!tr->saveMemory)
-	    {
-	      likelihoodArray = (double *)malloc_aligned(tr->innerNodes * memoryRequirements * sizeof(double));
-	      assert(likelihoodArray != NULL);
-	    }	 
-	}
-      else
-	{
-	  likelihoodArray_FLOAT = (float *)malloc_aligned(tr->innerNodes * memoryRequirements * sizeof(float));
-	  assert(likelihoodArray_FLOAT != NULL);
-	}
-    }
-  
-  if(!tr->multiGene)
-    {
-      if(!tr->useFastScaling)
-	{
-	  expArray = (int *)malloc(((size_t)tr->cdta->endsite) * tr->innerNodes * sizeof(int));
-	  assert(expArray != NULL);
-	}
-    }
-
-  if(!tr->useFloat)
-    {
-      tr->sumBuffer  = (double *)malloc_aligned(memoryRequirements * sizeof(double));
-      assert(tr->sumBuffer != NULL);
-    }
-  else
-    {
-      tr->sumBuffer_FLOAT  = (float *)malloc_aligned(memoryRequirements * sizeof(float));
-      assert(tr->sumBuffer_FLOAT != NULL);
-    }
-
-  assert(4 * sizeof(double) > sizeof(parsimonyVector));
-
+  tr->sumBuffer  = (double *)malloc_aligned(memoryRequirements * sizeof(double), 16);
+  assert(tr->sumBuffer != NULL);
+ 
   offset = 0;
 
   /* C-OPT for initial testing tr->NumberOfModels will be 1 */
 
   for(model = 0; model < (size_t)tr->NumberOfModels; model++)
     {
-      size_t lower = tr->partitionData[model].lower;
-      size_t width = tr->partitionData[model].upper - lower;
+      size_t 
+	lower = tr->partitionData[model].lower,
+	width = tr->partitionData[model].upper - lower;
 
       /* TODO all of this must be reset/adapted when fixModelIndices is called ! */
 
-      if(!tr->useFloat)
-	tr->partitionData[model].sumBuffer       = &tr->sumBuffer[offset];
-      else
-	tr->partitionData[model].sumBuffer_FLOAT = &tr->sumBuffer_FLOAT[offset];
+      
+      tr->partitionData[model].sumBuffer       = &tr->sumBuffer[offset];
+     
 
-      tr->partitionData[model].perSiteLL    = &tr->perSiteLL[lower];
-
-      /* do something about this ! */
-
-      tr->partitionData[model].wr           = &tr->cdta->wr[lower];
-      tr->partitionData[model].wr2          = &tr->cdta->wr2[lower];
-
-      if(tr->useFloat)
-	{
-	  tr->partitionData[model].wr_FLOAT           = &tr->cdta->wr_FLOAT[lower];
-	  tr->partitionData[model].wr2_FLOAT          = &tr->cdta->wr2_FLOAT[lower];
-	}
+      tr->partitionData[model].perSiteLL    = &tr->perSiteLL[lower];        
 
 
       tr->partitionData[model].wgt          = &tr->cdta->aliaswgt[lower];
@@ -3137,45 +2783,12 @@ static void allocNodex (tree *tr)
       offset += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;      
     }
 
-
-
   for(i = 0; i < tr->innerNodes; i++)
-    {
-      offset = 0;
-
+    {     
       for(model = 0; model < (size_t)tr->NumberOfModels; model++)
-	{
-	  size_t width = tr->partitionData[model].upper - tr->partitionData[model].lower;
-
-	  if(!tr->multiGene)
-	    {
-	      if(!tr->useFastScaling)
-		tr->partitionData[model].expVector[i] = &expArray[i * ((size_t)tr->cdta->endsite) + ((size_t)tr->partitionData[model].lower)];	    
-	  
-	      if(!tr->useFloat)
-		{
-		  if(tr->saveMemory)
-		    {
-		      tr->partitionData[model].xVector[i]   = (double*)NULL;
-		      tr->partitionData[model].pVector[i]   = (parsimonyVector *)NULL;
-		      /* DYNAMIC: SOS what do we do here? Only allow operating on pre-defined starting trees?*/
-		    }
-		  else		    
-		    {
-		      tr->partitionData[model].xVector[i]   = &likelihoodArray[i * memoryRequirements + offset];		  		      		      
-		      tr->partitionData[model].pVector[i]   = (parsimonyVector *)tr->partitionData[model].xVector[i];
-		    }
-		}
-	      else
-		{
-		  tr->partitionData[model].xVector_FLOAT[i]   = &likelihoodArray_FLOAT[i * memoryRequirements + offset];
-		  tr->partitionData[model].pVector[i]   = (parsimonyVector *)tr->partitionData[model].xVector_FLOAT[i];
-		}
-	    }
-
-
-	  offset += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;
-	 
+	{	 	  
+	  tr->partitionData[model].expVector[i] = (int*)NULL;
+	  tr->partitionData[model].xVector[i]   = (double*)NULL;		  			      		  		      		      		  	    	    	  	 
 	}
     }
 }
@@ -3222,12 +2835,9 @@ static void initAdef(analdef *adef)
   adef->similarityFilterMode   = 0;
   adef->useExcludeFile         = FALSE;
   adef->userProteinModel       = FALSE;
-  adef->externalAAMatrix       = (double*)NULL;
   adef->computeELW             = FALSE;
   adef->computeDistance        = FALSE;
-  adef->thoroughInsertion      = FALSE;
-  adef->compressPatterns       = TRUE;
-  adef->useFloat               = FALSE;
+  adef->compressPatterns       = TRUE; 
   adef->readTaxaOnly           = FALSE;
   adef->meshSearch             = 0;
   adef->useBinaryModelFile     = FALSE;
@@ -3350,13 +2960,7 @@ static int modelExists(char *model, analdef *adef)
       return 1;
     }
 
-  if(strcmp(model, "GTRGAMMA_FLOAT\0") == 0)
-    {
-      adef->model = M_GTRGAMMA;
-      adef->useInvariant = FALSE;
-      adef->useFloat = TRUE;
-      return 1;
-    }
+  
 
   if(strcmp(model, "GTRCAT\0") == 0)
     {
@@ -3365,14 +2969,7 @@ static int modelExists(char *model, analdef *adef)
       return 1;
     }
 
-   if(strcmp(model, "GTRCAT_FLOAT\0") == 0)
-    {
-      adef->model = M_GTRCAT;
-      adef->useInvariant = FALSE;
-      adef->useFloat = TRUE;
-      return 1;
-
-    }
+   
 
   if(strcmp(model, "GTRCATI\0") == 0)
     {
@@ -3393,6 +2990,7 @@ static int modelExists(char *model, analdef *adef)
       adef->model = M_PROTCAT;
       adef->proteinMatrix = GTR;
       adef->useInvariant = FALSE;
+      adef->protEmpiricalFreqs = 1;
       return 1;
     }
 
@@ -3409,6 +3007,7 @@ static int modelExists(char *model, analdef *adef)
       adef->model = M_PROTGAMMA;
       adef->proteinMatrix = GTR;
       adef->useInvariant = FALSE;
+      adef->protEmpiricalFreqs = 1;
       return 1;
     }
 
@@ -3417,12 +3016,58 @@ static int modelExists(char *model, analdef *adef)
       adef->model = M_PROTGAMMA;
       adef->proteinMatrix = GTR;
       adef->useInvariant = TRUE;
+      adef->protEmpiricalFreqs = 1;
+      return 1;
+    }
+  
+  /*************** AA GTR_UNLINKED ********************/
+
+  if(strcmp(model, "PROTCATGTR_UNLINKED\0") == 0)    
+    {
+      printf("Advisory: GTR_UNLINKED only has an effect if specified in the partition file\n");
+
+      adef->model = M_PROTCAT;
+      adef->proteinMatrix = GTR_UNLINKED;
+      adef->useInvariant = FALSE;
+      adef->protEmpiricalFreqs = 1;
       return 1;
     }
 
+  if(strcmp(model, "PROTCATIGTR_UNLINKED\0") == 0)
+    {
+      printf("Advisory: GTR_UNLINKED only has an effect if specified in the partition file\n");
+      
+      adef->model = M_PROTCAT;
+      adef->proteinMatrix = GTR_UNLINKED;
+      adef->useInvariant = TRUE;
+      adef->protEmpiricalFreqs = 1;
+      return 1;
+    }
+
+  if(strcmp(model, "PROTGAMMAGTR_UNLINKED\0") == 0)
+    {
+      printf("Advisory: GTR_UNLINKED only has an effect if specified in the partition file\n");
+      
+      adef->model = M_PROTGAMMA;
+      adef->proteinMatrix = GTR_UNLINKED;
+      adef->useInvariant = FALSE;
+      adef->protEmpiricalFreqs = 1;
+      return 1;
+    }
+
+  if(strcmp(model, "PROTGAMMAIGTR_UNLINKED\0") == 0)
+    {
+      printf("Advisory: GTR_UNLINKED only has an effect if specified in the partition file\n");
+      
+      adef->model = M_PROTGAMMA;
+      adef->proteinMatrix = GTR_UNLINKED;
+      adef->useInvariant = TRUE;
+      return 1;
+    }
+  
   /****************** AA ************************/
 
-  for(i = 0; i < NUM_PROT_MODELS - 1; i++)
+  for(i = 0; i < NUM_PROT_MODELS - 2; i++)
     {
       /* check CAT */
 
@@ -3450,35 +3095,6 @@ static int modelExists(char *model, analdef *adef)
 	  return 1;
 	}
 
-      /* check CAT FLOAT */
-
-      strcpy(thisModel, "PROTCAT");
-      strcat(thisModel, protModels[i]);
-      strcat(thisModel, "_FLOAT");
-
-      if(strcmp(model, thisModel) == 0)
-	{
-	  adef->model = M_PROTCAT;
-	  adef->proteinMatrix = i;
-	  adef->useFloat = TRUE;
-	  return 1;
-	}
-
-      /* check CATF FLOAT */
-
-      strcpy(thisModel, "PROTCAT");
-      strcat(thisModel, protModels[i]);
-      strcat(thisModel, "F");
-      strcat(thisModel, "_FLOAT");
-
-      if(strcmp(model, thisModel) == 0)
-	{
-	  adef->model = M_PROTCAT;
-	  adef->proteinMatrix = i;
-	  adef->protEmpiricalFreqs = 1;
-	  adef->useFloat = TRUE;
-	  return 1;
-	}
 
       /* check CATI */
 
@@ -3522,20 +3138,7 @@ static int modelExists(char *model, analdef *adef)
 	  return 1;
 	}
 
-      /* check GAMMA FLOAT */
-
-      strcpy(thisModel, "PROTGAMMA");
-      strcat(thisModel, protModels[i]);
-      strcat(thisModel, "_FLOAT");
-
-      if(strcmp(model, thisModel) == 0)
-	{
-	  adef->model = M_PROTGAMMA;
-	  adef->proteinMatrix = i;
-	  adef->useFloat = TRUE;
-	  adef->useInvariant = FALSE;
-	  return 1;
-	}
+     
 
 
       /*check GAMMAI*/
@@ -3567,23 +3170,7 @@ static int modelExists(char *model, analdef *adef)
 	  return 1;
 	}
 
-      /* check GAMMAmodelF FLOAT*/
-
-      strcpy(thisModel, "PROTGAMMA");
-      strcat(thisModel, protModels[i]);
-      strcat(thisModel, "F");
-      strcat(thisModel, "_FLOAT");
-
-      if(strcmp(model, thisModel) == 0)
-	{
-	  adef->model = M_PROTGAMMA;
-	  adef->proteinMatrix = i;
-	  adef->protEmpiricalFreqs = 1;
-	  adef->useInvariant = FALSE;
-	  adef->useFloat = TRUE;
-	  return 1;
-	}
-
+     
       /* check GAMMAImodelF */
 
       strcpy(thisModel, "PROTGAMMAI");
@@ -3765,18 +3352,19 @@ static void printVersionInfo(void)
 {
   printf("\n\nThis is %s version %s released by Alexandros Stamatakis in %s.\n\n",  programName, programVersion, programDate);
   printf("With greatly appreciated code contributions by:\n");
-  printf("Andre Aberer (TUM)\n");     
-  printf("Simon Berger (TUM)\n");
-  printf("John Cazes (TACC)\n");
-  printf("Michael Ott (TUM)\n"); 
-  printf("Nick Pattengale (UNM)\n"); 
-  printf("Wayne Pfeiffer (SDSC)\n\n");
+  printf("Andre Aberer (HITS)\n");     
+  printf("Simon Berger (HITS)\n"); 
+  printf("Nick Pattengale (Sandia)\n"); 
+  printf("Wayne Pfeiffer (SDSC)\n");
+  printf("Akifumi S. Tanabe (Univ. Tsukuba)\n\n");
 }
 
 static void printMinusFUsage(void)
 {
   printf("\n");
   printf("              \"-f a\": rapid Bootstrap analysis and search for best-scoring ML tree in one program run\n");  
+
+  printf("              \"-f A\": compute marginal ancestral states on a ROOTED reference tree provided with \"t\"\n");
 
   printf("              \"-f b\": draw bipartition information on a tree provided with \"-t\" based on multiple trees\n");
   printf("                      (e.g., from a bootstrap) in a file specifed by \"-z\"\n");
@@ -3825,9 +3413,6 @@ static void printMinusFUsage(void)
   printf("                      if the trees have node labales represented as integer support values the program will also compute two flavors of\n");
   printf("                      the weighted Robinson-Foulds (WRF) distance\n");
 
-  printf("              \"-f R\": compute rogue taxa using new statistical method based on the evolutionary placement algorithm\n");
-  printf("                      WARNING: this is experimental code \n");
-
   printf("              \"-f s\": split up a multi-gene partitioned alignment into the respective subalignments \n");
 
   printf("              \"-f S\": compute site-specific placement bias using a leave one out test inspired by the evolutionary placement algorithm\n");
@@ -3835,12 +3420,9 @@ static void printMinusFUsage(void)
   printf("              \"-f t\": do randomized tree searches on one fixed starting tree\n");
 
   printf("              \"-f u\": execute morphological weight calibration using maximum likelihood, this will return a weight vector.\n");
-  printf("                      you need to provide a morphological alignment and a reference tree via \"-t\" \n");
-  
-  printf("              \"-f U\": execute morphological wieght calibration using parsimony, this will return a weight vector.\n");
-  printf("                      you need to provide a morphological alignment and a reference tree via \"-t\" \n");
+  printf("                      you need to provide a morphological alignment and a reference tree via \"-t\" \n");    
 
-  printf("              \"-f v\": classify a bunch of environmental sequences into a reference tree using the slow heuristics without dynamic alignment\n");
+  printf("              \"-f v\": classify a bunch of environmental sequences into a reference tree using thorough read insertions\n");
   printf("                      you will need to start RAxML with a non-comprehensive reference tree and an alignment containing all sequences (reference + query)\n");
 
   printf("              \"-f w\": compute ELW test on a bunch of trees passed via \"-z\" \n");
@@ -3849,7 +3431,7 @@ static void printMinusFUsage(void)
   printf("                      starting tree or a user-defined tree passed via \"-t\", only allowed for GAMMA-based\n");
   printf("                      models of rate heterogeneity\n");
 
-  printf("              \"-f y\": classify a bunch of environmental sequences into a reference tree using the fast heuristics without dynamic alignment\n");
+  printf("              \"-f y\": classify a bunch of environmental sequences into a reference tree using parsimony\n");
   printf("                      you will need to start RAxML with a non-comprehensive reference tree and an alignment containing all sequences (reference + query)\n");
   
   printf("\n");
@@ -3874,16 +3456,16 @@ static void printREADME(void)
   printf("      [-b bootstrapRandomNumberSeed] [-B wcCriterionThreshold]\n");
   printf("      [-c numberOfCategories] [-C] [-d] [-D]\n");
   printf("      [-e likelihoodEpsilon] [-E excludeFileName]\n");
-  printf("      [-f a|b|c|d|e|E|F|g|h|i|I|j|J|m|n|o|p|r|R|s|S|t|u|U|v|w|x|y] [-F]\n");
-  printf("      [-g groupingFileName] [-G placementThreshold] [-h] [-H placementThreshold]\n");
+  printf("      [-f a|A|b|c|d|e|E|F|g|h|i|I|j|J|m|n|o|p|r|s|S|t|u|v|w|x|y] [-F]\n");
+  printf("      [-g groupingFileName] [-G placementThreshold] [-h]\n");
   printf("      [-i initialRearrangementSetting] [-I autoFC|autoMR|autoMRE|autoMRE_IGN]\n");
   printf("      [-j] [-J MR|MR_DROP|MRE|STRICT|STRICT_DROP] [-k] [-K] [-M]\n");
-  printf("      [-o outGroupName1[,outGroupName2[,...]]] [-O checkPointInterval]\n");
+  printf("      [-o outGroupName1[,outGroupName2[,...]]]\n");
   printf("      [-p parsimonyRandomSeed] [-P proteinModel]\n");
   printf("      [-q multipleModelFileName] [-r binaryConstraintTree]\n");
   printf("      [-R binaryModelParamFile] [-S secondaryStructureFile] [-t userStartingTree]\n");
   printf("      [-T numberOfThreads] [-U] [-v] [-w outputDirectory] [-W slidingWindowSize]\n");
-  printf("      [-x rapidBootstrapRandomNumberSeed] [-y] [-Y]\n");
+  printf("      [-x rapidBootstrapRandomNumberSeed] [-X] [-y]\n");
   printf("      [-z multipleTreesFile] [-#|-N numberOfRuns|autoFC|autoMR|autoMRE|autoMRE_IGN]\n");
   printf("\n");
   printf("      -a      Specify a column weight file name to assign individual weights to each column of \n");
@@ -3961,10 +3543,6 @@ static void printREADME(void)
   printf("\n");
   printf("      -h      Display this help message.\n");
   printf("\n");
-  printf("      -H      enable the MP-based evolutionary placement algorithm heuristics\n");
-  printf("              by specifiyng a threshold value (fraction of insertion branches to be evaluated\n");
-  printf("              using slow insertions under ML).\n");
-  printf("\n");
   printf("      -i      Initial rearrangement setting for the subsequent application of topological \n");
   printf("              changes phase\n");
   printf("\n");
@@ -4016,19 +3594,13 @@ static void printREADME(void)
   printf("                \"-m GTRCAT\"         : GTR + Optimization of substitution rates + Optimization of site-specific\n");
   printf("                                      evolutionary rates which are categorized into numberOfCategories distinct \n");
   printf("                                      rate categories for greater computational efficiency.  Final tree might be evaluated\n");
-  printf("                                      under GTRGAMMA, depending on the tree search option\n");
-  printf("                \"-m GTRCAT_FLOAT\"   : Same as above but uses single-precision floating point arithemtics instead of double-precision\n");
-  printf("                                      Usage only recommened for testing, the code will run slower, but can save almost 50%s of memory.\n", "%");
-  printf("                                      If you have problems with phylogenomic datasets and large memory requirements you may give it a shot.\n");
-  printf("                                      Keep in mind that numerical stability seems to be okay but needs further testing.\n");  
+  printf("                                      under GTRGAMMA, depending on the tree search option\n");  
   printf("                \"-m GTRCATI\"        : GTR + Optimization of substitution rates + Optimization of site-specific\n");
   printf("                                      evolutionary rates which are categorized into numberOfCategories distinct \n");
   printf("                                      rate categories for greater computational efficiency.  Final tree might be evaluated\n");
   printf("                                      under GTRGAMMAI, depending on the tree search option\n");
   printf("                \"-m GTRGAMMA\"       : GTR + Optimization of substitution rates + GAMMA model of rate \n");
-  printf("                                      heterogeneity (alpha parameter will be estimated)\n");
-  printf("                \"-m GTRGAMMA_FLOAT\" : Same as GTRGAMMA, but also with single-precision arithmetics, same cautionary notes as for  \n");
-  printf("                                      GTRCAT_FLOAT apply.\n");
+  printf("                                      heterogeneity (alpha parameter will be estimated)\n");  
   printf("                \"-m GTRGAMMAI\"      : Same as GTRGAMMA, but with estimate of proportion of invariable sites \n");
   printf("\n");
   printf("              MULTI-STATE:\n\n");
@@ -4053,18 +3625,16 @@ static void printREADME(void)
   printf("                \"-m PROTCATmatrixName[F]\"         : specified AA matrix + Optimization of substitution rates + Optimization of site-specific\n");
   printf("                                                    evolutionary rates which are categorized into numberOfCategories distinct \n");
   printf("                                                    rate categories for greater computational efficiency.   Final tree might be evaluated\n");
-  printf("                                                    automatically under PROTGAMMAmatrixName[f], depending on the tree search option\n");
-  printf("                \"-m PROTCATmatrixName[F]_FLOAT\"   : PROTCAT with single precision arithmetics, same cautionary notes as for GTRCAT_FLOAT apply\n");
+  printf("                                                    automatically under PROTGAMMAmatrixName[f], depending on the tree search option\n");  
   printf("                \"-m PROTCATImatrixName[F]\"        : specified AA matrix + Optimization of substitution rates + Optimization of site-specific\n");
   printf("                                                    evolutionary rates which are categorized into numberOfCategories distinct \n");
   printf("                                                    rate categories for greater computational efficiency.   Final tree might be evaluated\n");
   printf("                                                    automatically under PROTGAMMAImatrixName[f], depending on the tree search option\n");
   printf("                \"-m PROTGAMMAmatrixName[F]\"       : specified AA matrix + Optimization of substitution rates + GAMMA model of rate \n");
-  printf("                                                    heterogeneity (alpha parameter will be estimated)\n");
-  printf("                \"-m PROTGAMMAmatrixName[F]_FLOAT\" : PROTGAMMA with single precision arithmetics, same cautionary notes as for GTRCAT_FLOAT apply\n");
+  printf("                                                    heterogeneity (alpha parameter will be estimated)\n");  
   printf("                \"-m PROTGAMMAImatrixName[F]\"      : Same as PROTGAMMAmatrixName[F], but with estimate of proportion of invariable sites \n");
   printf("\n");
-  printf("                Available AA substitution models: DAYHOFF, DCMUT, JTT, MTREV, WAG, RTREV, CPREV, VT, BLOSUM62, MTMAM, LG, GTR\n");
+  printf("                Available AA substitution models: DAYHOFF, DCMUT, JTT, MTREV, WAG, RTREV, CPREV, VT, BLOSUM62, MTMAM, LG, MTART, MTZOA, PMB, HIVB, HIVW, JTTDCMUT, FLU, GTR\n");
   printf("                With the optional \"F\" appendix you can specify if you want to use empirical base frequencies\n");
   printf("                Please note that for mixed models you can in addition specify the per-gene AA model in\n");
   printf("                the mixed model file (see manual for details). Also note that if you estimate AA GTR parameters on a partitioned\n");
@@ -4080,14 +3650,7 @@ static void printREADME(void)
   printf("\n");
   printf("      -o      Specify the name of a single outgrpoup or a comma-separated list of outgroups, eg \"-o Rat\" \n");
   printf("              or \"-o Rat,Mouse\", in case that multiple outgroups are not monophyletic the first name \n");
-  printf("              in the list will be selected as outgroup, don't leave spaces between taxon names!\n");
-  printf("\n");  
-  printf("      -O      Enable checkpointing using the dmtcp library available at http://dmtcp.sourceforge.net/\n");
-  printf("              This only works if you call the program by preceded by the command \"dmtcp_checkpoint\"\n");
-  printf("              and if you compile a dedicated binary using the appropriate Makefile.\n");
-  printf("              With \"-O\" you can specify the interval between checkpoints in seconds.\n");
-  printf("\n");
-  printf("              DEFAULT: 3600.0 seconds\n");
+  printf("              in the list will be selected as outgroup, don't leave spaces between taxon names!\n"); 
   printf("\n");
   printf("      -p      Specify a random number seed for the parsimony inferences. This allows you to reproduce your results\n");
   printf("              and will help me debug the program.\n");
@@ -4137,17 +3700,19 @@ static void printREADME(void)
   printf("              CAUTION: unlike in version 7.0.4 RAxML will conduct rapid BS replicates under \n");
   printf("              the model of rate heterogeneity you specified via \"-m\" and not by default under CAT\n");
   printf("\n");
+  printf("      -X      EXPERIMENTAL OPTION: This option will do a per-site estimate of protein substitution models\n");
+  printf("              by looping over all given, fixed models LG, WAG, JTT, etc and using their respective base frequencies to independently\n");
+  printf("              assign a prot subst. model to each site via ML optimization\n");
+  printf("              At present this option only works with the GTR+GAMMA model, unpartitioned datasets, and in the sequential\n");
+  printf("              version only.\n");
+  printf("\n");
+  printf("              DEFAULT: OFF\n");
+  printf("\n");
   printf("      -y      If you want to only compute a parsimony starting tree with RAxML specify \"-y\",\n");
   printf("              the program will exit after computation of the starting tree\n");
   printf("\n");
   printf("              DEFAULT: OFF\n");
-  printf("\n");
-  printf("      -Y      Do a more thorough parsimony tree search using a parsimony ratchet and exit. \n");
-  printf("              specify the number of ratchet searches via \"-#\" or \"-N\"\n");
-  printf("              This has just been implemented for completeness, if you want a fast MP implementation use TNT\n");
-  printf("\n");
-  printf("              DEFAULT: OFF\n");
-  printf("\n");
+  printf("\n"); 
   printf("      -z      Specify the file name of a file containing multiple trees e.g. from a bootstrap\n");
   printf("              that shall be used to draw bipartition values onto a tree provided with \"-t\",\n");
   printf("              It can also be used to compute per site log likelihoods in combination with \"-f g\"\n");
@@ -4253,7 +3818,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 
   tr->useFastScaling = TRUE;
 
-  tr->useFloat = FALSE;
+ 
   tr->bootStopCriterion = -1;
   tr->wcThreshold = 0.03;
   tr->doCutoff = TRUE;
@@ -4261,21 +3826,25 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
   tr->searchConvergenceCriterion = FALSE;
   tr->catOnly = FALSE;
   tr->multiGene = 0;
-  tr->fastEPA_ML = FALSE;
-  tr->fastEPA_MP = FALSE;
+  tr->useEpaHeuristics = FALSE;
   tr->fastEPAthreshold = -1.0;
   tr->multiStateModel  = GTR_MULTI_STATE;
   tr->useGappedImplementation = FALSE;
   tr->saveMemory = FALSE;
+  tr->estimatePerSiteAA = FALSE;
   
   /********* tr inits end*************/
 
 
   while(!bad_opt &&
-	((c = mygetopt(argc,argv,"R:O:T:E:N:B:L:P:S:A:G:H:I:J:K:W:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vdyjhkMYDFCQU", &optind, &optarg))!=-1))
+	((c = mygetopt(argc,argv,"R:T:E:N:B:L:P:S:A:G:H:I:J:K:W:l:x:z:g:r:e:a:b:c:f:i:m:t:w:s:n:o:q:#:p:vdyjhkMDFCQUX", &optind, &optarg))!=-1))
     {
     switch(c)
       {
+      case 'X':
+	tr->estimatePerSiteAA = TRUE;
+	tr->useFastScaling    = FALSE;
+	break;
       case 'W':
 	sscanf(optarg,"%d", &(adef->slidingWindowSize));
 	if(adef->slidingWindowSize <= 0)
@@ -4300,21 +3869,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       case 'R':
 	adef->useBinaryModelFile = TRUE;
 	strcpy(binaryModelParamsInputFileName, optarg);
-	break;     
-      case 'O':
-	#ifndef _IPTOL
-	printf("Using the \"-O\" option to enable checkpointing does not have an effect with this binary, please use the appropriate\n");
-	printf("Makefile to produce the respective binary. You will also need to install the dmtcp library http://dmtcp.sourceforge.net/\n");	
-	printf("If you are a user that is afraid of the command line, don't try this at home.\n");
-	#else
-	sscanf(optarg,"%lf", &checkPointInterval);
-	if(checkPointInterval < 1800.0)
-	  printf("\n\nYou have set the checkpointing interval to %f seconds, are you sure that you want to checkpoint that frequntly?\n", checkPointInterval);
-	if(checkPointInterval > 86400.0)
-	  printf("\n\nYou have set the checkpointing interval to %f seconds/%f hours/%fdays are you sure that you want to checkpoint that infrequntly?\n",
-		 checkPointInterval, checkPointInterval / 3600.0, checkPointInterval / 86400.0);	  	
-	#endif
-	break;
+	break;          
       case 'K':
 	{
 	  const char *modelList[3] = { "ORDERED", "MK", "GTR"};
@@ -4387,7 +3942,8 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	tr->catOnly = TRUE;
 	break;
       case 'G':
-	tr->fastEPA_ML = TRUE;
+	tr->useEpaHeuristics = TRUE;
+	
 	sscanf(optarg,"%lf", &fastEPAthreshold);
 	tr->fastEPAthreshold = fastEPAthreshold;
 	
@@ -4405,24 +3961,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	tr->useFastScaling = FALSE;
 #endif	
 	break;	
-      case 'H':
-	tr->fastEPA_MP = TRUE;
-	sscanf(optarg,"%lf", &fastEPAthreshold);
-	tr->fastEPAthreshold = fastEPAthreshold;	
-	if(fastEPAthreshold <= 0.0 || fastEPAthreshold >= 1.0)
-	  {
-	    printf("\nHeuristic EPA threshold must be set to values between 0.0 and 1.0, you just set it to %f\n", fastEPAthreshold);
-	    exit(-1);
-	  }
-	if(fastEPAthreshold < 0.015625 || fastEPAthreshold > 0.5)
-	  {
-	    printf("\n\nWARNING, reasonable settings for heuristic EPA threshold range between 0.015625 (1/64) and 0.5 (1/2).\n");
-	    printf("You are just setting it to %f\n\n", fastEPAthreshold);
-	  }
-#ifdef _USE_PTHREADS
-	tr->useFastScaling = FALSE;
-#endif		
-	break;	
+     
       case 'I':     
 	adef->readTaxaOnly = TRUE;
 	adef->mode = BOOTSTOP_ONLY;
@@ -4486,7 +4025,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       case 'P':
 	strcpy(proteinModelFileName, optarg);
 	adef->userProteinModel = TRUE;
-	parseProteinModel(adef);
+	/*parseProteinModel(adef->externalAAMatrix, proteinModelFileName);*/
 	break;
       case 'S':
 	adef->useSecondaryStructure = TRUE;
@@ -4593,10 +4132,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	errorExit(0);
       case 'y':
 	adef->startingTreeOnly = 1;
-	break;
-      case 'Y':
-	adef->mode = THOROUGH_PARSIMONY;
-	break;
+	break;     
       case 'h':
 	printREADME();
 	errorExit(0);
@@ -4632,6 +4168,10 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	sscanf(optarg, "%c", &modelChar);
 	switch(modelChar)
 	  {
+	  case 'A':
+	    adef->mode = ANCESTRAL_STATES; 
+	    /*adef->compressPatterns  = FALSE;*/
+	    break;
 	  case 'a':
 	    adef->allInOne = TRUE;
 	    adef->mode = BIG_RAPID_MODE;
@@ -4701,10 +4241,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  case 'r':
 	    adef->readTaxaOnly = TRUE;
 	    adef->mode = COMPUTE_RF_DISTANCE;
-	    break;
-	  case 'R':
-	    adef->mode = EPA_ROGUE_TAXA;
-	    break;
+	    break;	  
 	  case 's':
 	    adef->mode = SPLIT_MULTI_GENE;
 	    break;
@@ -4722,18 +4259,19 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	    adef->mode = MORPH_CALIBRATOR;
 	    tr->useFastScaling = FALSE;
 	    adef->compressPatterns  = FALSE;	    
-	    break;
-	  case 'U':
-	    adef->mode = MORPH_CALIBRATOR_PARSIMONY;
-	    tr->useFastScaling = FALSE;
-	    adef->compressPatterns  = FALSE;	    
-	    break;
+	    break;	  
 	  case 'v':	    
 	    adef->mode = CLASSIFY_ML;	   
-	    adef->thoroughInsertion = TRUE;	   
+	   	   
+#ifdef _PAVLOS
+	    adef->compressPatterns  = FALSE; 
+#endif
 #ifdef _USE_PTHREADS
 	    tr->useFastScaling = FALSE;
 #endif
+	    break;
+	  case 'y':
+	    adef->mode = CLASSIFY_MP;
 	    break;
 	  case 'w':	    
 	    adef->mode = COMPUTE_ELW;
@@ -4742,14 +4280,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  case 'x':
 	    adef->mode = DISTANCE_MODE;
 	    adef->computeDistance = TRUE;
-	    break;	  	  
-	  case 'y':
-	    adef->mode = CLASSIFY_ML;	    
-	    adef->thoroughInsertion = FALSE;	   
-#ifdef _USE_PTHREADS
-	    tr->useFastScaling = FALSE;
-#endif
-	    break;	  	  	  	     
+	    break;	  	  	  	  	  	  	     
 	  default:
 	    {
 	      if(processID == 0)
@@ -4797,7 +4328,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 		printf("For AA data use:     PROTCATmatrixName[F]  or PROTGAMMAmatrixName[F]  or\n");
 		printf("                     PROTCATImatrixName[F] or PROTGAMMAImatrixName[F]   \n");
 		printf("The AA substitution matrix can be one of the following: \n");
-		printf("DAYHOFF, DCMUT, JTT, MTREV, WAG, RTREV, CPREV, VT, BLOSUM62, MTMAM, LG, GTR\n\n");
+		printf("DAYHOFF, DCMUT, JTT, MTREV, WAG, RTREV, CPREV, VT, BLOSUM62, MTMAM, LG, MTART, MTZOA, PMB, HIVB, HIVW, JTTDCMUT, FLU, GTR\n\n");
 		printf("With the optional \"F\" appendix you can specify if you want to use empirical base frequencies\n");
 		printf("Please note that for mixed models you can in addition specify the per-gene model in\n");
 		printf("the mixed model file (see manual for details)\n");
@@ -4824,7 +4355,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
     }
 #endif
 
-  tr->useFloat = adef->useFloat;
+ 
 
   if(bSeedSet && xSeedSet)
     {
@@ -4849,12 +4380,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	  printf("Are you really sure that this is what you want to do?\n");
 	}
 
-      if(tr->fastEPA_MP || tr->fastEPA_ML)
-	{
-	  printf("Error, you can's use the additional MP and ML heuristics for rapid evolutionary placement in\n");
-	  printf("combination with bootstrapping\n");
-	  errorExit(-1);
-	}
+     
     }
 
 
@@ -4913,7 +4439,7 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
 	}
     }
 
-  if(adef->rapidBoot && !(adef->mode == CLASSIFY_ML))
+  if(adef->rapidBoot)
     {
       if(processID == 0 && (adef->restart || treesSet) && !(groupSet || constraintSet))
 	{
@@ -5071,6 +4597,13 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
       errorExit(-1);
     }
 
+  if(!treeSet && adef->mode == ANCESTRAL_STATES)
+    {
+      if(processID == 0)
+	printf("\n Error you need to specify a ROOTED binary reference tree for ancestral state computations\n");
+      errorExit(-1);
+    }
+
   if(treeSet && constraintSet)
     {
       if(processID == 0)
@@ -5150,11 +4683,11 @@ static void get_args(int argc, char *argv[], analdef *adef, tree *tr)
      {
        if(processID == 0)
 	 {
-	   printf("\n Error: No tree evaluation with GTRCAT/PROTCAT possible\n");
-	   printf("the GTRCAT likelihood values are instable at present and should not\n");
-	   printf("be used to compare trees based on ML values\n");
-	 }
-       errorExit(-1);
+	   printf("\n Warning: tree evaluation with CAT model of rate heterogeneity\n");
+	   printf("Only compare likelihood values for identical rate category assignments\n");	  
+	   printf("CAT-based Branch lengths are on average shorter by factor 0.5 than GAMMA-based branch lengths\n");
+	   printf("... but highly correlated with GAMMA branch lengths\n");
+	 }      
      }
 
   if(!nameSet)
@@ -5320,6 +4853,28 @@ static void makeFileNames(void)
 /********************PRINTING various INFO **************************************/
 
 
+void printBaseFrequencies(tree *tr)
+{
+  if(processID == 0)
+    {
+      int 
+	model;
+
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{
+	  int i;
+
+	  printBothOpen("Partition: %d with name: %s\n", model, tr->partitionData[model].partitionName);
+	  printBothOpen("Base frequencies: ");
+	  
+	  for(i = 0; i < tr->partitionData[model].states; i++)
+	    printBothOpen("%1.3f ", tr->partitionData[model].frequencies[i]);
+	  
+	  printBothOpen("\n\n");
+	}	      
+    }
+}
+
 static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *argv[])
 {
   if(processID == 0)
@@ -5338,12 +4893,11 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
      
       printBoth(infoFile, "\n\nThis is %s version %s released by Alexandros Stamatakis in %s.\n\n",  programName, programVersion, programDate);
       printBoth(infoFile, "With greatly appreciated code contributions by:\n");
-      printBoth(infoFile, "Andre Aberer (TUM)\n");     
-      printBoth(infoFile, "Simon Berger (TUM)\n");
-      printBoth(infoFile, "John Cazes (TACC)\n");
-      printBoth(infoFile, "Michael Ott (TUM)\n"); 
-      printBoth(infoFile, "Nick Pattengale (UNM)\n"); 
-      printBoth(infoFile, "Wayne Pfeiffer (SDSC)\n\n");
+      printBoth(infoFile, "Andre Aberer (HITS)\n");     
+      printBoth(infoFile, "Simon Berger (HITS)\n");     
+      printBoth(infoFile, "Nick Pattengale (Sandia)\n"); 
+      printBoth(infoFile, "Wayne Pfeiffer (SDSC)\n");
+      printBoth(infoFile, "Akifumi S. Tanabe (Univ. Tsukuba)\n\n");
       
       if(!adef->readTaxaOnly)
 	{
@@ -5359,11 +4913,7 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	}
 
       switch(adef->mode)
-	{
-	case THOROUGH_PARSIMONY:
-	  printBoth(infoFile, "\nRAxML more exhaustive parsimony search with a ratchet.\n");
-	  printBoth(infoFile, "For a faster and better implementation of MP searches please use TNT by Pablo Goloboff.\n\n");
-	  break;
+	{	
 	case DISTANCE_MODE:
 	  printBoth(infoFile, "\nRAxML Computation of pairwise distances\n\n");
 	  break;
@@ -5392,7 +4942,10 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	  printBoth(infoFile, "\nRAxML stepwise MP addition to incomplete starting tree\n\n");
 	  break;
 	case CLASSIFY_ML:
-	  printBoth(infoFile, "\nRAxML classification algorithm\n\n");
+	  printBoth(infoFile, "\nRAxML likelihood-based placement algorithm\n\n");
+	  break;
+	case CLASSIFY_MP:
+	  printBoth(infoFile, "\nRAxML parsimony-based placement algorithm\n\n");
 	  break;
 	case GENERATE_BS:
 	  printBoth(infoFile, "\nRAxML BS replicate generation\n\n");
@@ -5405,7 +4958,7 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	  break;
 	case CONSENSUS_ONLY:
 	  if(adef->leaveDropMode)
-	    printBoth(infoFile, "\nRAxML rogue taxa computation by Andre Aberer (TUM)\n\n");
+	    printBoth(infoFile, "\nRAxML rogue taxa computation by Andre Aberer (HITS)\n\n");
 	  else
 	    printBoth(infoFile, "\nRAxML consensus tree computation\n\n");
 	  break;
@@ -5420,10 +4973,7 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	  break;
 	case MORPH_CALIBRATOR:
 	  printBoth(infoFile, "\nRAxML morphological calibrator using Maximum Likelihood\n\n");
-	  break;
-	case MORPH_CALIBRATOR_PARSIMONY:
-	  printBoth(infoFile, "\nRAxML morphological calibrator using Parsimony\n\n");
-	  break;	  
+	  break;		  
 	case MESH_TREE_SEARCH:
 	  printBoth(infoFile, "\nRAxML experimental mesh tree search\n\n");
 	  break;
@@ -5433,26 +4983,25 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	case SH_LIKE_SUPPORTS:
 	  printBoth(infoFile, "\nRAxML computation of SH-like support values on a given tree\n\n");
 	  break;
-	case EPA_ROGUE_TAXA:
-	  printBoth(infoFile, "\nRAxML experimental statistical rogue taxon identification algorithm\n\n");
-	  break;
 	case EPA_SITE_SPECIFIC_BIAS:
 	  printBoth(infoFile, "\nRAxML exprimental site-specfific phylogenetic placement bias analysis algorithm\n\n");
+	  break;
+
+	case ANCESTRAL_STATES:
+	  printBoth(infoFile, "\nRAxML marginal ancestral state computation\n\n");
 	  break;
 	default:
 	  assert(0);
 	}
 
-      if(adef->mode != THOROUGH_PARSIMONY)
-	{ 
-	  if(!adef->readTaxaOnly)
-	    {
-	      if(adef->perGeneBranchLengths)
-		printBoth(infoFile, "Using %d distinct models/data partitions with individual per partition branch length optimization\n\n\n", tr->NumberOfModels);
-	      else
-		printBoth(infoFile, "Using %d distinct models/data partitions with joint branch length optimization\n\n\n", tr->NumberOfModels);
-	    }
-	}
+    
+      if(!adef->readTaxaOnly)
+	{
+	  if(adef->perGeneBranchLengths)
+	    printBoth(infoFile, "Using %d distinct models/data partitions with individual per partition branch length optimization\n\n\n", tr->NumberOfModels);
+	  else
+	    printBoth(infoFile, "Using %d distinct models/data partitions with joint branch length optimization\n\n\n", tr->NumberOfModels);
+	}    
 
       if(adef->mode == BIG_RAPID_MODE)
 	{
@@ -5489,25 +5038,23 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 
 
       if(!adef->readTaxaOnly)
-	{
-	  if(adef->mode != THOROUGH_PARSIMONY)
-	    printBoth(infoFile, "All free model parameters will be estimated by RAxML\n");
+	{	  
+	  printBoth(infoFile, "All free model parameters will be estimated by RAxML\n");
 
-	  if(adef->mode != THOROUGH_PARSIMONY)
+	  
+	  if(tr->rateHetModel == GAMMA || tr->rateHetModel == GAMMA_I)
+	    printBoth(infoFile, "%s model of rate heteorgeneity, ML estimate of alpha-parameter\n\n", modelType);
+	  else
 	    {
-	      if(tr->rateHetModel == GAMMA || tr->rateHetModel == GAMMA_I)
-		printBoth(infoFile, "%s model of rate heteorgeneity, ML estimate of alpha-parameter\n\n", modelType);
-	      else
-		{
-		  printBoth(infoFile, "ML estimate of %d per site rate categories\n\n", adef->categories);
-		  if(adef->mode != CLASSIFY_ML)
-		    printBoth(infoFile, "Likelihood of final tree will be evaluated and optimized under %s\n\n", modelType);
-		}
-	      
-	      if(adef->mode != CLASSIFY_ML)
-		printBoth(infoFile, "%s Model parameters will be estimated up to an accuracy of %2.10f Log Likelihood units\n\n",
-			  modelType, adef->likelihoodEpsilon);
+	      printBoth(infoFile, "ML estimate of %d per site rate categories\n\n", adef->categories);
+	      if(adef->mode != CLASSIFY_ML && adef->mode != CLASSIFY_MP)
+		printBoth(infoFile, "Likelihood of final tree will be evaluated and optimized under %s\n\n", modelType);
 	    }
+	  
+	  if(adef->mode != CLASSIFY_ML && adef->mode != CLASSIFY_MP)
+	    printBoth(infoFile, "%s Model parameters will be estimated up to an accuracy of %2.10f Log Likelihood units\n\n",
+		      modelType, adef->likelihoodEpsilon);
+	  
 
 	  for(model = 0; model < tr->NumberOfModels; model++)
 	    {
@@ -5518,38 +5065,38 @@ static void printModelAndProgramInfo(tree *tr, analdef *adef, int argc, char *ar
 	      switch(tr->partitionData[model].dataType)
 		{
 		case DNA_DATA:
-		  printBoth(infoFile, "DataType: DNA\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
-		    printBoth(infoFile, "Substitution Matrix: GTR\n");
+		  printBoth(infoFile, "DataType: DNA\n");		  
+		  printBoth(infoFile, "Substitution Matrix: GTR\n");
 		  break;
 		case AA_DATA:
 		  assert(tr->partitionData[model].protModels >= 0 && tr->partitionData[model].protModels < NUM_PROT_MODELS);
 		  printBoth(infoFile, "DataType: AA\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
+		  if(tr->partitionData[model].protModels != PROT_FILE)
+		    {		     		     
+		      printBoth(infoFile, "Substitution Matrix: %s\n", protModels[tr->partitionData[model].protModels]);		      
+		      printBoth(infoFile, "Using %s base frequencies\n", (tr->partitionData[model].usePredefinedProtFreqs == TRUE)?"fixed":"empirical");		      
+		    }
+		  else
 		    {
-		      printBoth(infoFile, "Substitution Matrix: %s\n", (adef->userProteinModel)?"External user-specified model":protModels[tr->partitionData[model].protModels]);
-		      printBoth(infoFile, "%s Base Frequencies:\n", (tr->partitionData[model].protFreqs == 1)?"Empirical":"Fixed");
+		       printBoth(infoFile, "Substitution Matrix File name: %s\n", tr->partitionData[model].proteinSubstitutionFileName);
+		       printBoth(infoFile, "Using base frequencies as provided in the model file\n");
 		    }
 		  break;
 		case BINARY_DATA:
-		  printBoth(infoFile, "DataType: BINARY/MORPHOLOGICAL\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
-		    printBoth(infoFile, "Substitution Matrix: Uncorrected\n");
+		  printBoth(infoFile, "DataType: BINARY/MORPHOLOGICAL\n");		  
+		  printBoth(infoFile, "Substitution Matrix: Uncorrected\n");
 		  break;
 		case SECONDARY_DATA:
-		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
-		    printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
+		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE\n");		  
+		  printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
 		  break;
 		case SECONDARY_DATA_6:
-		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE 6 STATE\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
-		    printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
+		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE 6 STATE\n");		  
+		  printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
 		  break;
 		case SECONDARY_DATA_7:
-		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE 7 STATE\n");
-		  if(adef->mode != THOROUGH_PARSIMONY)
-		    printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
+		  printBoth(infoFile, "DataType: SECONDARY STRUCTURE 7 STATE\n");		 
+		  printBoth(infoFile, "Substitution Matrix: %s\n", secondaryModelList[tr->secondaryStructureModel]);
 		  break;
 		case GENERIC_32:
 		  printBoth(infoFile, "DataType: Multi-State with %d distinct states in use (maximum 32)\n",tr->partitionData[model].states);		  
@@ -5597,8 +5144,7 @@ void printResult(tree *tr, analdef *adef, boolean finalPrint)
   strcpy(temporaryFileName, resultFileName);
 
   switch(adef->mode)
-    {
-    case MORPH_CALIBRATOR_PARSIMONY:
+    {    
     case MESH_TREE_SEARCH:    
     case MORPH_CALIBRATOR:
       break;
@@ -5809,8 +5355,7 @@ void printLog(tree *tr, analdef *adef, boolean finalPrint)
 	      tr->checkPointCounter++;
 	    }
 	}
-      break;
-    case MORPH_CALIBRATOR_PARSIMONY:
+      break;   
     case MORPH_CALIBRATOR:
       break;
     default:
@@ -6005,6 +5550,8 @@ void getDataTypeString(tree *tr, int model, char typeOfData[1024])
       assert(0);
     }
 }
+
+
 
 void printModelParams(tree *tr, analdef *adef)
 {
@@ -6293,6 +5840,9 @@ static void finalizeInfoFile(tree *tr, analdef *adef)
 	  printBothOpen("Execution information file written to :  %s\n",infoFileName);
 	  printBothOpen("Complete parsimony tree written to:      %s\n", permFileName);
 	  break;
+	case ANCESTRAL_STATES:
+	  printBothOpen("\n\nTime for marginal ancestral state computation: %f\n\n", t);
+	  break;
 	default:
 	  assert(0);
 	}
@@ -6353,23 +5903,9 @@ static void threadFixModelIndices(tree *tr, tree *localTree, int tid, int n)
   computeFraction(localTree, tid, n);
 
   for(model = 0, offset = 0, countOffset = 0; model < (size_t)localTree->NumberOfModels; model++)
-    {
-      
-      if(!tr->useFloat)
-	localTree->partitionData[model].sumBuffer       = &localTree->sumBuffer[offset];
-      else
-	localTree->partitionData[model].sumBuffer_FLOAT = &localTree->sumBuffer_FLOAT[offset];
-
-      localTree->partitionData[model].perSiteLL    = &localTree->perSiteLLPtr[countOffset];
-      localTree->partitionData[model].wr           = &localTree->wrPtr[countOffset];
-      localTree->partitionData[model].wr2          = &localTree->wr2Ptr[countOffset];
-
-      if(localTree->useFloat)
-	{
-	  localTree->partitionData[model].wr_FLOAT           = &localTree->wrPtr_FLOAT[countOffset];
-	  localTree->partitionData[model].wr2_FLOAT          = &localTree->wr2Ptr_FLOAT[countOffset]; 
-	}
-
+    {           
+      localTree->partitionData[model].sumBuffer    = &localTree->sumBuffer[offset];      
+      localTree->partitionData[model].perSiteLL    = &localTree->perSiteLLPtr[countOffset];          
       localTree->partitionData[model].wgt          = &localTree->wgtPtr[countOffset];
       localTree->partitionData[model].invariant    = &localTree->invariantPtr[countOffset];
       localTree->partitionData[model].rateCategory = &localTree->rateCategoryPtr[countOffset];     
@@ -6395,44 +5931,7 @@ static void threadFixModelIndices(tree *tr, tree *localTree, int tid, int n)
       assert(countOffset == myLength);
     }
 
-  for(i = 0; i < (size_t)localTree->innerNodes; i++)
-    {
-      for(model = 0, offset = 0, countOffset = 0; model < (size_t)localTree->NumberOfModels; model++)
-	{
-	  size_t width = localTree->partitionData[model].width;
-
-	  if(!tr->useFastScaling)	  
-	    localTree->partitionData[model].expVector[i] = &localTree->expArray[i * myLength + countOffset];
-
-	  /*localTree->partitionData[model].yVector[i+1]   = &localTree->y_ptr[i * myLength + countOffset];*/
-
-	  if(!tr->useFloat)
-	    {
-	      if(!localTree->saveMemory)
-		{
-		  localTree->partitionData[model].xVector[i]   = &localTree->likelihoodArray[i * memoryRequirements + offset];
-		  localTree->partitionData[model].pVector[i]   = (parsimonyVector *)localTree->partitionData[model].xVector[i];
-		}
-	      else
-		{
-		  localTree->partitionData[model].xVector[i]   = (double*)NULL;
-		  localTree->partitionData[model].pVector[i]   = (parsimonyVector *)NULL;
-		  /* DYNAMIC: SOS what do we do here? Only allow operating on pre-defined starting trees?*/
-		}
-	    }
-	  else
-	    {	      		
-	      localTree->partitionData[model].xVector_FLOAT[i]   = &localTree->likelihoodArray_FLOAT[i * memoryRequirements + offset];
-	      localTree->partitionData[model].pVector[i]         = (parsimonyVector *)localTree->partitionData[model].xVector_FLOAT[i];
-	    }
-
-	  countOffset += width;
-
-	  offset += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;
-	  
-	}
-      assert(countOffset == myLength);
-    }
+ 
 
   for(model = 0, globalCounter = 0; model < (size_t)localTree->NumberOfModels; model++)
     {
@@ -6440,18 +5939,9 @@ static void threadFixModelIndices(tree *tr, tree *localTree, int tid, int n)
 	{
 	  if(i % (size_t)n == (size_t)tid)
 	    {
-	      localTree->partitionData[model].wgt[localCounter]          = tr->cdta->aliaswgt[globalCounter];
-	      localTree->partitionData[model].wr[localCounter]           = tr->cdta->wr[globalCounter];
-	      localTree->partitionData[model].wr2[localCounter]          = tr->cdta->wr2[globalCounter];
+	      localTree->partitionData[model].wgt[localCounter]          = tr->cdta->aliaswgt[globalCounter];	      
 	      localTree->partitionData[model].invariant[localCounter]    = tr->invariant[globalCounter];
-	      localTree->partitionData[model].rateCategory[localCounter] = tr->cdta->rateCategory[globalCounter];
-
-	      if(localTree->useFloat)
-		{
-		  localTree->partitionData[model].wr_FLOAT[localCounter]           = tr->cdta->wr_FLOAT[globalCounter];
-		  localTree->partitionData[model].wr2_FLOAT[localCounter]          = tr->cdta->wr2_FLOAT[globalCounter]; 
-		}
-
+	      localTree->partitionData[model].rateCategory[localCounter] = tr->cdta->rateCategory[globalCounter];	      
 
 	      for(j = 1; j <= (size_t)localTree->mxtips; j++)
 	       localTree->partitionData[model].yVector[j][localCounter] = tr->yVector[j][globalCounter]; 	     
@@ -6497,7 +5987,7 @@ static void initPartition(tree *tr, tree *localTree, int tid)
       localTree->innerNodes              = tr->innerNodes;
       localTree->useFastScaling          = tr->useFastScaling;
       localTree->maxCategories           = tr->maxCategories;
-      localTree->useFloat                = tr->useFloat;
+     
       localTree->originalCrunchedLength  = tr->originalCrunchedLength;
       localTree->NumberOfModels          = tr->NumberOfModels;
       localTree->mxtips                  = tr->mxtips;
@@ -6521,26 +6011,25 @@ static void initPartition(tree *tr, tree *localTree, int tid)
 
       localTree->cdta               = (cruncheddata*)malloc(sizeof(cruncheddata));
       localTree->cdta->patrat       = (double*)malloc(sizeof(double) * localTree->originalCrunchedLength);
-      localTree->cdta->patratStored = (double*)malloc(sizeof(double) * localTree->originalCrunchedLength);
-
-      localTree->NumberOfCategories = tr->NumberOfCategories;
+      localTree->cdta->patratStored = (double*)malloc(sizeof(double) * localTree->originalCrunchedLength);      
 
       localTree->discreteRateCategories = tr->discreteRateCategories;     
 
       for(model = 0; model < localTree->NumberOfModels; model++)
 	{
+	  localTree->partitionData[model].numberOfCategories    = tr->partitionData[model].numberOfCategories;
 	  localTree->partitionData[model].states     = tr->partitionData[model].states;
 	  localTree->partitionData[model].maxTipStates    = tr->partitionData[model].maxTipStates;
 	  localTree->partitionData[model].dataType   = tr->partitionData[model].dataType;
 	  localTree->partitionData[model].protModels = tr->partitionData[model].protModels;
-	  localTree->partitionData[model].protFreqs  = tr->partitionData[model].protFreqs;
+	  localTree->partitionData[model].usePredefinedProtFreqs  = tr->partitionData[model].usePredefinedProtFreqs;
 	  localTree->partitionData[model].mxtips     = tr->partitionData[model].mxtips;
 	  localTree->partitionData[model].lower      = tr->partitionData[model].lower;
 	  localTree->partitionData[model].upper      = tr->partitionData[model].upper;
 	  localTree->executeModel[model]             = TRUE;
 	  localTree->perPartitionLH[model]           = 0.0;
 	  localTree->storedPerPartitionLH[model]     = 0.0;
-	  totalLength += (localTree->partitionData[model].upper -  localTree->partitionData[model].lower);
+	  totalLength += (localTree->partitionData[model].upper -  localTree->partitionData[model].lower);		  
 	}
 
       assert(totalLength == localTree->originalCrunchedLength);
@@ -6566,27 +6055,31 @@ static void allocNodex(tree *tr, int tid, int n)
 
   for(model = 0; model < (size_t)tr->NumberOfModels; model++)
     {
-      size_t width = tr->partitionData[model].width;
+      size_t 
+	width = tr->partitionData[model].width;
+
+      int 
+	i;
 
       myLength += width;
 
       memoryRequirements += (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states) * width;
-
-      {		
-	tr->partitionData[model].gapVectorLength = ((int)width / 32) + 1;
-	
-	tr->partitionData[model].gapVector = (unsigned int*)calloc(tr->partitionData[model].gapVectorLength * 2 * tr->mxtips, sizeof(unsigned int));
-
-
-
-	tr->partitionData[model].initialGapVectorSize = tr->partitionData[model].gapVectorLength * 2 * tr->mxtips * sizeof(int);
-	
-	tr->partitionData[model].gapColumn = (double *)malloc_aligned(((size_t)tr->innerNodes) *
+     
+      tr->partitionData[model].gapVectorLength = ((int)width / 32) + 1;
+      
+      tr->partitionData[model].gapVector = (unsigned int*)calloc(tr->partitionData[model].gapVectorLength * 2 * tr->mxtips, sizeof(unsigned int));
+      
+      tr->partitionData[model].initialGapVectorSize = tr->partitionData[model].gapVectorLength * 2 * tr->mxtips * sizeof(int);
+      
+      tr->partitionData[model].gapColumn = (double *)malloc_aligned(((size_t)tr->innerNodes) *
 								      ((size_t)(tr->discreteRateCategories)) * 
 								      ((size_t)(tr->partitionData[model].states)) *
-								      sizeof(double));		        
-      }
-      
+								      sizeof(double), 16);		             
+      for(i = 0; i < tr->innerNodes; i++)
+	{
+	  tr->partitionData[model].xVector[i]   = (double*)NULL;     
+	  tr->partitionData[model].expVector[i]   = (int*)NULL;
+	}
     }
 
   if(tid == 0)
@@ -6594,61 +6087,15 @@ static void allocNodex(tree *tr, int tid, int n)
       tr->perSiteLL       = (double *)malloc((size_t)tr->cdta->endsite * sizeof(double));
       assert(tr->perSiteLL != NULL);
     }
-
-  if(!tr->useFloat)
-    {
-      if(!tr->saveMemory)
-	{
-	  tr->likelihoodArray = (double *)malloc_aligned(tr->innerNodes * memoryRequirements * sizeof(double));
-	  assert(tr->likelihoodArray != NULL);
-	}
-      else
-	tr->likelihoodArray = (double *)NULL;	
-    }
-  else
-    {
-      tr->likelihoodArray_FLOAT = (float *)malloc_aligned(tr->innerNodes * memoryRequirements * sizeof(float));
-      assert(tr->likelihoodArray_FLOAT != NULL);      
-    }
-
-  if(!tr->useFastScaling)
-    {
-      tr->expArray = (int *)malloc(myLength * tr->innerNodes * sizeof(int));
-      assert(tr->expArray != NULL);
-    }
-
-  if(!tr->useFloat)
-    {
-      tr->sumBuffer  = (double *)malloc_aligned(memoryRequirements * sizeof(double));
-      assert(tr->sumBuffer != NULL);
-    }
-  else
-    {
-      tr->sumBuffer_FLOAT  = (float *)malloc_aligned(memoryRequirements * sizeof(float));
-      assert(tr->sumBuffer_FLOAT != NULL);
-    }
-
+  
+  tr->sumBuffer  = (double *)malloc_aligned(memoryRequirements * sizeof(double), 16);
+  assert(tr->sumBuffer != NULL);
+   
   tr->y_ptr = (unsigned char *)malloc(myLength * (size_t)(tr->mxtips) * sizeof(unsigned char));
-  assert(tr->y_ptr != NULL);
-
-  assert(4 * sizeof(double) > sizeof(parsimonyVector));
+  assert(tr->y_ptr != NULL);  
 
   tr->perSiteLLPtr     = (double*) malloc(myLength * sizeof(double));
-
-  tr->wrPtr            = (double*) malloc(myLength * sizeof(double));
-  assert(tr->wrPtr != NULL);
-
-  tr->wr2Ptr           = (double*) malloc(myLength * sizeof(double));
-  assert(tr->wr2Ptr != NULL);
-
-  if(tr->useFloat)
-    {
-      tr->wrPtr_FLOAT            = (float*) malloc(myLength * sizeof(float));
-      assert(tr->wrPtr_FLOAT != NULL);
-      
-      tr->wr2Ptr_FLOAT           = (float*) malloc(myLength * sizeof(float));
-      assert(tr->wr2Ptr_FLOAT != NULL);
-    }
+  assert(tr->perSiteLLPtr != NULL);
 
   tr->wgtPtr           = (int*)    malloc(myLength * sizeof(int));
   assert(tr->wgtPtr != NULL);  
@@ -6661,7 +6108,6 @@ static void allocNodex(tree *tr, int tid, int n)
 }
 
 
-/* question is how much of this nonsense do we need here if at all*/
 
 
 
@@ -6699,6 +6145,22 @@ static void collectDouble(double *dst, double *src, tree *tr, int n, int tid)
 }
 
 
+static void broadcastPerSiteRates(tree *tr, tree *localTree)
+{
+  int
+    i = 0,
+    model = 0;
+
+  for(model = 0; model < localTree->NumberOfModels; model++)
+    {
+      localTree->partitionData[model].numberOfCategories = tr->partitionData[model].numberOfCategories;
+
+      for(i = 0; i < localTree->partitionData[model].numberOfCategories; i++)
+	localTree->partitionData[model].perSiteRates[i] = tr->partitionData[model].perSiteRates[i];
+    }
+
+}
+
 static void execFunction(tree *tr, tree *localTree, int tid, int n)
 {
   double volatile result;
@@ -6723,16 +6185,7 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
       break;
     case THREAD_FIX_MODEL_INDICES:
       threadFixModelIndices(tr, localTree, tid, n);
-      break;
-    case THREAD_EVALUATE_PARSIMONY:
-      sendTraversalInfo(localTree, tr);
-      parsimonyResult = evaluateParsimonyIterative(localTree);
-      reductionBufferParsimony[tid] = parsimonyResult;
-      break;
-    case THREAD_NEWVIEW_PARSIMONY:
-      sendTraversalInfo(localTree, tr);
-      newviewParsimonyIterative(localTree);
-      break;
+      break;    
     case THREAD_EVALUATE:
       sendTraversalInfo(localTree, tr);
       result = evaluateIterative(localTree, FALSE);
@@ -6845,11 +6298,7 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      memcpy(localTree->partitionData[model].EI,          tr->partitionData[model].EI,          pl->eiLength * sizeof(double));
 	      memcpy(localTree->partitionData[model].tipVector,   tr->partitionData[model].tipVector,   pl->tipVectorLength * sizeof(double));
 	      
-	      if(localTree->useFloat)
-		{		     
-		  memcpy(localTree->partitionData[model].EV_FLOAT,          tr->partitionData[model].EV_FLOAT,          pl->evLength * sizeof(float));
-		  memcpy(localTree->partitionData[model].tipVector_FLOAT,   tr->partitionData[model].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-		}	
+	     	
 	    }
 	}
       break;
@@ -6867,11 +6316,7 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      memcpy(localTree->partitionData[model].EI,          tr->partitionData[model].EI,          pl->eiLength * sizeof(double));
 	      memcpy(localTree->partitionData[model].tipVector,   tr->partitionData[model].tipVector,   pl->tipVectorLength * sizeof(double));
 	      
-	      if(localTree->useFloat)
-		{		     
-		  memcpy(localTree->partitionData[model].EV_FLOAT,          tr->partitionData[model].EV_FLOAT,          pl->evLength * sizeof(float));
-		  memcpy(localTree->partitionData[model].tipVector_FLOAT,   tr->partitionData[model].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-		}	     
+	      	     
 	    }
 	}
 
@@ -6973,24 +6418,17 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      memcpy(localTree->partitionData[model].frequencies, tr->partitionData[model].frequencies, pl->frequenciesLength * sizeof(double));
 	      memcpy(localTree->partitionData[model].tipVector,   tr->partitionData[model].tipVector,   pl->tipVectorLength * sizeof(double));
 	      
-	      if(localTree->useFloat)
-		{		     
-		  memcpy(localTree->partitionData[model].EV_FLOAT,          tr->partitionData[model].EV_FLOAT,          pl->evLength * sizeof(float));
-		  memcpy(localTree->partitionData[model].tipVector_FLOAT,   tr->partitionData[model].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-		}	    	      	      
+	       	      	      
 
 	      memcpy(localTree->partitionData[model].gammaRates, tr->partitionData[model].gammaRates, sizeof(double) * 4);
 	      localTree->partitionData[model].alpha = tr->partitionData[model].alpha;
 	      localTree->partitionData[model].propInvariant = tr->partitionData[model].propInvariant;
 	    }
 	}
-      break;
-     
-
+      break;     
     case THREAD_COPY_INIT_MODEL:
       if(tid > 0)
 	{
-	  localTree->NumberOfCategories = tr->NumberOfCategories;
 	  localTree->rateHetModel       = tr->rateHetModel;
 
 	  for(model = 0; model < localTree->NumberOfModels; model++)
@@ -7004,21 +6442,19 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      memcpy(localTree->partitionData[model].frequencies, tr->partitionData[model].frequencies, pl->frequenciesLength * sizeof(double));
 	      memcpy(localTree->partitionData[model].tipVector,   tr->partitionData[model].tipVector,   pl->tipVectorLength * sizeof(double));
 	      
-	      if(localTree->useFloat)
-		{		     
-		  memcpy(localTree->partitionData[model].EV_FLOAT,          tr->partitionData[model].EV_FLOAT,          pl->evLength * sizeof(float));
-		  memcpy(localTree->partitionData[model].tipVector_FLOAT,   tr->partitionData[model].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-		}	       
+	          
 
-	       memcpy(localTree->partitionData[model].gammaRates, tr->partitionData[model].gammaRates, sizeof(double) * 4);
-	       localTree->partitionData[model].alpha = tr->partitionData[model].alpha;
-	       localTree->partitionData[model].propInvariant = tr->partitionData[model].propInvariant;
-	       localTree->partitionData[model].lower      = tr->partitionData[model].lower;
-	       localTree->partitionData[model].upper      = tr->partitionData[model].upper;
+	      memcpy(localTree->partitionData[model].gammaRates, tr->partitionData[model].gammaRates, sizeof(double) * 4);
+	      localTree->partitionData[model].alpha = tr->partitionData[model].alpha;
+	      localTree->partitionData[model].propInvariant = tr->partitionData[model].propInvariant;
+	      localTree->partitionData[model].lower      = tr->partitionData[model].lower;
+	      localTree->partitionData[model].upper      = tr->partitionData[model].upper;
+	      
+	      localTree->partitionData[model].numberOfCategories      = tr->partitionData[model].numberOfCategories;
 	    }
 
 	  memcpy(localTree->cdta->patrat,        tr->cdta->patrat,      localTree->originalCrunchedLength * sizeof(double));
-	  memcpy(localTree->cdta->patratStored, tr->cdta->patratStored, localTree->originalCrunchedLength * sizeof(double));
+	  memcpy(localTree->cdta->patratStored, tr->cdta->patratStored, localTree->originalCrunchedLength * sizeof(double));	  
 	}     
 
        for(model = 0; model < localTree->NumberOfModels; model++)
@@ -7027,36 +6463,13 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	   for(i = localTree->partitionData[model].lower, localIndex = 0; i <  localTree->partitionData[model].upper; i++)
 	     if(i % n == tid)
 	       {
-		 localTree->partitionData[model].wgt[localIndex]          = tr->cdta->aliaswgt[i];
-		 localTree->partitionData[model].wr[localIndex]           = tr->cdta->wr[i];
-		 localTree->partitionData[model].wr2[localIndex]          = tr->cdta->wr2[i];
-		 
-		 if(localTree->useFloat)
-		   {
-		     localTree->partitionData[model].wr_FLOAT[localIndex]           = tr->cdta->wr_FLOAT[i];
-		     localTree->partitionData[model].wr2_FLOAT[localIndex]          = tr->cdta->wr2_FLOAT[i]; 
-		   }
+		 localTree->partitionData[model].wgt[localIndex]          = tr->cdta->aliaswgt[i];				 		
+		 localTree->partitionData[model].invariant[localIndex]    = tr->invariant[i];		
 
-		 localTree->partitionData[model].invariant[localIndex]    = tr->invariant[i];
-		 localTree->partitionData[model].rateCategory[localIndex] = tr->cdta->rateCategory[i];
 		 localIndex++;
 	       }	  
 	 }
-
-      break;
-
-    case THREAD_PARSIMONY_RATCHET:
-      for(model = 0; model < localTree->NumberOfModels; model++)
-	{
-	  int localIndex;
-	  for(i = localTree->partitionData[model].lower, localIndex = 0; i <  localTree->partitionData[model].upper; i++)
-	    if(i % n == tid)
-	      {
-		localTree->partitionData[model].wgt[localIndex]          = tr->cdta->aliaswgt[i];
-		localIndex++;
-	      }
-	}
-      break;
+      break;    
     case THREAD_RATE_CATS:
       sendTraversalInfo(localTree, tr);
       if(tid > 0)
@@ -7076,29 +6489,26 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
       break;
     case THREAD_COPY_RATE_CATS:
       if(tid > 0)
-	{
-	  localTree->NumberOfCategories = tr->NumberOfCategories;
+	{	
 	  memcpy(localTree->cdta->patrat,       tr->cdta->patrat,         localTree->originalCrunchedLength * sizeof(double));
 	  memcpy(localTree->cdta->patratStored, tr->cdta->patratStored,   localTree->originalCrunchedLength * sizeof(double));
+	  broadcastPerSiteRates(tr, localTree);
 	}
-
 
       for(model = 0; model < localTree->NumberOfModels; model++)
 	{
+	  localTree->partitionData[model].numberOfCategories = tr->partitionData[model].numberOfCategories;
+
 	  for(localCounter = 0, i = localTree->partitionData[model].lower;  i < localTree->partitionData[model].upper; i++)
 	    {
 	      if(i % n == tid)
-		{
-		  localTree->partitionData[model].wr[localCounter]           = tr->cdta->wr[i];
-		  localTree->partitionData[model].wr2[localCounter]          = tr->cdta->wr2[i];
-
-		  if(localTree->useFloat)
-		   {
-		     localTree->partitionData[model].wr_FLOAT[localCounter]           = tr->cdta->wr_FLOAT[i];
-		     localTree->partitionData[model].wr2_FLOAT[localCounter]          = tr->cdta->wr2_FLOAT[i]; 
-		   }
-
+		{		 
 		  localTree->partitionData[model].rateCategory[localCounter] = tr->cdta->rateCategory[i];
+		  localTree->partitionData[model].wr[localCounter]             = tr->wr[i];
+		  localTree->partitionData[model].wr2[localCounter]            = tr->wr2[i];
+
+		
+		 
 		  localCounter++;
 		}
 	    }
@@ -7157,17 +6567,16 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      memcpy(localTree->partitionData[model].frequencies, tr->partitionData[model].frequencies, pl->frequenciesLength * sizeof(double));
 	      memcpy(localTree->partitionData[model].tipVector,   tr->partitionData[model].tipVector,   pl->tipVectorLength * sizeof(double));
 	      
-	      if(localTree->useFloat)
-		{		    
-		  memcpy(localTree->partitionData[model].EV_FLOAT,          tr->partitionData[model].EV_FLOAT,          pl->evLength * sizeof(float));
-		  memcpy(localTree->partitionData[model].tipVector_FLOAT,   tr->partitionData[model].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-		}	     
+	     	     
 	    }
 	}
       break;
     case THREAD_INIT_EPA:     
       if(tid > 0)
 	{
+	  localTree->leftRootNode             = tr->leftRootNode;
+	  localTree->rightRootNode            = tr->rightRootNode;
+	  localTree->wasRooted                = tr->wasRooted;
 	  localTree->bInf                     = tr->bInf;	 
 	  localTree->numberOfBranches         = tr->numberOfBranches;
 	  localTree->contiguousVectorLength   = tr->contiguousVectorLength;
@@ -7176,86 +6585,36 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	  localTree->numberOfTipsForInsertion = tr->numberOfTipsForInsertion;	
 	  localTree->fracchange = tr->fracchange;
 	  memcpy(localTree->partitionContributions, tr->partitionContributions, sizeof(double) * localTree->NumberOfModels);
-	  memcpy(localTree->fracchanges, tr->fracchanges, sizeof(double) * localTree->NumberOfModels);
+	  memcpy(localTree->fracchanges, tr->fracchanges, sizeof(double) * localTree->NumberOfModels);	 
 	}                                                
 
-      localTree->temporarySumBuffer = (double *)malloc_aligned(sizeof(double) * localTree->contiguousVectorLength);
-      localTree->temporaryVector  = (double *)malloc_aligned(sizeof(double) * localTree->contiguousVectorLength);
-      localTree->temporaryParsimonyVector = (parsimonyVector*)localTree->temporaryVector;
+      localTree->temporarySumBuffer = (double *)malloc_aligned(sizeof(double) * localTree->contiguousVectorLength, 16);
+      localTree->temporaryVector  = (double *)malloc_aligned(sizeof(double) * localTree->contiguousVectorLength, 16);      
 
       localTree->temporaryScaling = (int *)malloc(sizeof(int) * localTree->contiguousScalingLength);
                  
-      localTree->contiguousRateCategory = (int*)malloc(sizeof(int) * localTree->contiguousScalingLength);
+      
       localTree->contiguousWgt          = (int*)malloc(sizeof(int) * localTree->contiguousScalingLength);
       localTree->contiguousInvariant    = (int*)malloc(sizeof(int) * localTree->contiguousScalingLength);	  
       
-      memcpy(localTree->contiguousRateCategory, tr->cdta->rateCategory, sizeof(int) * localTree->contiguousScalingLength);
+     
       memcpy(localTree->contiguousWgt         , tr->cdta->aliaswgt,     sizeof(int) * localTree->contiguousScalingLength);
       memcpy(localTree->contiguousInvariant   , tr->invariant,          sizeof(int) * localTree->contiguousScalingLength);
       
-      localTree->contiguousWR   = (double*)malloc(sizeof(double) * localTree->contiguousScalingLength);
-      localTree->contiguousWR2  = (double*)malloc(sizeof(double) * localTree->contiguousScalingLength);
-      localTree->contiguousPATRAT  = (double*)malloc(sizeof(double) * localTree->contiguousScalingLength);
+      if(tid > 0)
+	broadcastPerSiteRates(tr, localTree);
+
+      localTree->contiguousWR           = (double*)malloc(sizeof(double) * localTree->contiguousScalingLength);
+      localTree->contiguousWR2          = (double*)malloc(sizeof(double) * localTree->contiguousScalingLength);
+      localTree->contiguousRateCategory = (int*)malloc(sizeof(int) * localTree->contiguousScalingLength);
       
-      memcpy(localTree->contiguousWR, tr->cdta->wr, sizeof(double) * localTree->contiguousScalingLength);
-      memcpy(localTree->contiguousWR2, tr->cdta->wr2, sizeof(double) * localTree->contiguousScalingLength);     
-      memcpy(localTree->contiguousPATRAT, tr->cdta->patrat, sizeof(double) * localTree->contiguousScalingLength);
-      
+      memcpy(localTree->contiguousWR, tr->wr, sizeof(double) * localTree->contiguousScalingLength);
+      memcpy(localTree->contiguousWR2, tr->wr2, sizeof(double) * localTree->contiguousScalingLength);
+      memcpy(localTree->contiguousRateCategory, tr->cdta->rateCategory, sizeof(int) * localTree->contiguousScalingLength);           
      
       localTree->contiguousTips = tr->yVector;	  	
 	 
-      break;       
-    case THREAD_GATHER_PARSIMONY:
-      {	
-	int 
-	  branchCounter = tr->branchCounter;
-
-	parsimonyVector
-	  *leftContigousVector = localTree->bInf[branchCounter].epa->leftParsimony,
-	  *rightContigousVector = localTree->bInf[branchCounter].epa->rightParsimony;
-      
-	int	 		  
-	  globalCount       = 0,
-	  rightNumber = localTree->bInf[branchCounter].epa->rightNodeNumber,
-	  leftNumber  = localTree->bInf[branchCounter].epa->leftNodeNumber;	
-
-	for(model = 0; model < localTree->NumberOfModels; model++)
-	  {	    
-	    parsimonyVector
-	      *leftStridedVector  =  (parsimonyVector *)NULL,
-	      *rightStridedVector =  (parsimonyVector *)NULL;
-
-	    int	      	     	      
-	      localCount = 0;	   	    	   
-
-	    if(!isTip(leftNumber, localTree->mxtips))	      
-	      leftStridedVector        = localTree->partitionData[model].pVector[leftNumber - localTree->mxtips - 1];	       	    
-	   
-	    if(!isTip(rightNumber, localTree->mxtips))	      
-	      rightStridedVector        = localTree->partitionData[model].pVector[rightNumber - localTree->mxtips - 1];	   
-	   
-	    assert(!(isTip(leftNumber, localTree->mxtips) && isTip(rightNumber, localTree->mxtips)));	   	    	    
-
-	    for(globalCount = localTree->partitionData[model].lower; globalCount < localTree->partitionData[model].upper; globalCount++)
-	      {	
-	
-		if(globalCount % n == tid)
-		  {		    		   
-		    if(leftStridedVector)
-		      memcpy(&leftContigousVector[globalCount], 
-			     &leftStridedVector[localCount], sizeof(parsimonyVector));		      		    
-		    
-		    if(rightStridedVector)		      
-		      memcpy(&rightContigousVector[globalCount], 
-			     &rightStridedVector[localCount], sizeof(parsimonyVector));		  
-		   
-		    localCount++;		    
-		  }	       
-	      }	    	    
-	    
-	  }
-      }
-      break;       
+      break;         
     case THREAD_GATHER_LIKELIHOOD:
       {	
 	int 
@@ -7336,27 +6695,9 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 
 	  }
       }
-      break;    
-    case THREAD_PREPARE_EPA_PARSIMONY:              	             
-      memcpy(localTree->contiguousWgt         , tr->cdta->aliaswgt,     sizeof(int) * localTree->contiguousScalingLength);                                 	  	           
-      break;
-    case THREAD_CLEANUP_EPA_PARSIMONY:
-      memcpy(localTree->contiguousWgt         , tr->cdta->aliaswgt,     sizeof(int) * localTree->contiguousScalingLength);                            	  	           
-      break;
-    case THREAD_CONTIGUOUS_REPLICATE:      	        
-      memcpy(localTree->contiguousRateCategory, tr->cdta->rateCategory, sizeof(int) * localTree->contiguousScalingLength);
-      memcpy(localTree->contiguousWgt         , tr->cdta->aliaswgt,     sizeof(int) * localTree->contiguousScalingLength);
-      memcpy(localTree->contiguousInvariant   , tr->invariant,          sizeof(int) * localTree->contiguousScalingLength);            
-      
-      memcpy(localTree->contiguousWR, tr->cdta->wr, sizeof(double) * localTree->contiguousScalingLength);
-      memcpy(localTree->contiguousWR2, tr->cdta->wr2, sizeof(double) * localTree->contiguousScalingLength);     
-      memcpy(localTree->contiguousPATRAT, tr->cdta->patrat, sizeof(double) * localTree->contiguousScalingLength);                	  	
-     
-      break;        
+      break;                 
     case THREAD_INSERT_CLASSIFY:          
-    case THREAD_INSERT_CLASSIFY_THOROUGH:     
-    case THREAD_PARSIMONY_INSERTIONS:    
-    case THREAD_INSERT_CLASSIFY_THOROUGH_BS:
+    case THREAD_INSERT_CLASSIFY_THOROUGH:       
       { 
 	int
 	  branchNumber;
@@ -7386,14 +6727,8 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 		    addTraverseRobIterative(localTree, branchNumber);
 		    break;		  
 		  case  THREAD_INSERT_CLASSIFY_THOROUGH:		    
-		    testInsertThoroughIterative(localTree, branchNumber, FALSE);		   
-		    break;   
-		  case THREAD_PARSIMONY_INSERTIONS:
-		    insertionsParsimonyIterative(localTree, branchNumber);
-		    break; 
-		  case THREAD_INSERT_CLASSIFY_THOROUGH_BS:
-		    testInsertThoroughIterative(localTree, branchNumber, TRUE);
-		    break;
+		    testInsertThoroughIterative(localTree, branchNumber);		   
+		    break;   		 		 
 		  default:
 		    assert(0);
 		  }
@@ -7640,52 +6975,50 @@ static void execFunction(tree *tr, tree *localTree, int tid, int n)
 	      }
 	  }     
        }      
-      break;    
-     
-     
-      /*
-	not required any more, since parallel parsing has been abandoned!
+      break;         
+    case  THREAD_NEWVIEW_ANCESTRAL: 
+      sendTraversalInfo(localTree, tr);
+      newviewIterativeAncestral(localTree);
+      break;
+    case THREAD_GATHER_ANCESTRAL:      
+      {
+	double
+	  *contigousVector = tr->ancestralStates;
       
-	case THREAD_FILL_HASH_FOR_CONSENSUS:
-	assert(0);
-	break;
+	int	 
+	  globalColumnCount = 0,
+	  globalCount       = 0;	
 
-	dropset parallelization temporarily abandoned ........
+	for(model = 0; model < localTree->NumberOfModels; model++)
+	  {
+	    size_t
+	      blockRequirements = (size_t)(tr->discreteRateCategories) * (size_t)(tr->partitionData[model].states);
+	    
+	    int	     	     
+	      localColumnCount = 0,
+	      localCount = 0;	   
 
-	case THREAD_FIND_BEST_DROPSET:
-	assert(0);
-	break;          
-	case THREAD_CALC_DROPSETS:
-	assert(0);
-	break;
-      */
+	    double 
+	      *stridedVector = localTree->partitionData[model].sumBuffer;	    	   	    
 
+	    for(globalColumnCount = localTree->partitionData[model].lower; globalColumnCount < localTree->partitionData[model].upper; globalColumnCount++)
+	      {	
+		if(globalColumnCount % n == tid)
+		  {
+		    memcpy(&contigousVector[globalCount], &stridedVector[localCount], sizeof(double) * blockRequirements);		
+		    		   		   
+		    localColumnCount++;
+		    localCount += blockRequirements;
+		  }	
 
-      /*
-	Pthreads parallelization doesn't really scale with the new optimizations ....
+		globalCount += blockRequirements;
+	      }	    
 
-	case THREAD_INIT_FAST_PARSIMONY:
-	if(tid > 0)
-	{
-	localTree->ti = tr->ti;
-	localTree->parsimonyScore = (unsigned int*)malloc_aligned(sizeof(unsigned int) * 2 * localTree->mxtips);
-	
-	localTree->parsimonyState_A = tr->parsimonyState_A;
-	localTree->parsimonyState_C = tr->parsimonyState_C;
-	localTree->parsimonyState_G = tr->parsimonyState_G;
-	localTree->parsimonyState_T = tr->parsimonyState_T;
-	
-	localTree->compressedWidth = tr->compressedWidth;	  
-	}
-	break;
-	case  THREAD_FAST_NEWVIEW_PARSIMONY:
-	newviewParsimonyIterativeFast(localTree);
-	break;
-	case THREAD_FAST_EVALUATE_PARSIMONY: 
-	parsimonyResult = evaluateParsimonyIterativeFast(localTree);
-	reductionBufferParsimony[tid] = parsimonyResult;
-	break;
-      */
+	    assert(localColumnCount == localTree->partitionData[model].width);
+	    assert(localCount == (localTree->partitionData[model].width * (int)blockRequirements));
+	  }	
+      }      
+      break;
     default:
       printf("Job %d\n", currentJob);
       assert(0);
@@ -7959,8 +7292,17 @@ static void computePerSiteLLs(tree *tr, analdef *adef, char *bootStrapFileName)
       treeReadLen(treeFile, tr, FALSE, FALSE, FALSE, adef, TRUE);
       assert(tr->ntips == tr->mxtips);
       
-      if(i == 0)       
-	modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, TRUE);	
+      if(i == 0) 
+	{
+	  if(adef->useBinaryModelFile)
+	    {
+	      readBinaryModel(tr);
+	      evaluateGenericInitrav(tr, tr->start);
+	      treeEvaluate(tr, 2);
+	    }
+	  else
+	    modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, TRUE);	
+	}
       else
 	treeEvaluate(tr, 2);     
 
@@ -7992,7 +7334,51 @@ static void computePerSiteLLs(tree *tr, analdef *adef, char *bootStrapFileName)
 }
 
 
+static double cumulativeTreeLength(tree *tr, analdef *adef)
+{
+  double tl = 0.0;
 
+  if(adef->perGeneBranchLengths)
+    {
+      int 
+	accWgt = 0,
+	model;
+      
+      double 
+	accLength = 0.0;
+
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{
+	  int
+	    wgt = 0,
+	    i,
+	    lower,
+	    upper;
+
+	  double 
+	    tlm;
+
+	  tlm = treeLength(tr, model);
+
+	  lower = tr->partitionData[model].lower;
+	  upper = tr->partitionData[model].upper;
+
+	  for(i = lower; i < upper; i++)
+	    wgt += tr->cdta->aliaswgt[i];
+
+	  accLength += ((double)wgt) * tlm;
+	  accWgt += wgt;	  
+	}
+
+      tl = accLength / ((double)accWgt);
+
+    }
+  else
+    tl = treeLength(tr, 0);
+
+
+  return tl;
+}
 
 static void computeAllLHs(tree *tr, analdef *adef, char *bootStrapFileName)
 {
@@ -8065,7 +7451,7 @@ static void computeAllLHs(tree *tr, analdef *adef, char *bootStrapFileName)
       if(tr->likelihood > bestLH)
 	bestLH   = tr->likelihood;
       
-      printBothOpen("Tree %d Likelihood %f\n", i, tr->likelihood);    
+      printBothOpen("Tree %d Likelihood %f Tree-Length %f\n", i, tr->likelihood, cumulativeTreeLength(tr, adef));    
     }
 
   qsort(list, tr->numberOfTrees, sizeof(elw), elwCompareLikelihood);
@@ -8207,7 +7593,7 @@ static void computeELW(tree *tr, analdef *adef, char *bootStrapFileName)
 	{
 	  /* compute the next BS replicate, i.e., re-sample alignment columns */
 
-	  computeNextReplicate(tr, &adef->rapidBoot, originalRateCategories, originalInvariant, TRUE);
+	  computeNextReplicate(tr, &adef->rapidBoot, originalRateCategories, originalInvariant, TRUE, TRUE);
 
 	  /* if this is the first replicate for this tree do a slightly more thorough br-len opt */
 	  /* we don't re-estimate ML model params (except branches) for every replicate to make things a bit faster */
@@ -8506,113 +7892,9 @@ static void morphologicalCalibration(tree *tr, analdef *adef)
 }
 
 
-static void minimumWeights(tree *tr, unsigned int *minWeights)
-{
-  int 
-    i,
-    j;
-  
-  for(i = 0; i < tr->cdta->endsite; i++)
-    {
-      int 
-	count = -1,
-	undetermined = getUndetermined(tr->dataVector[i]);
-
-      unsigned int	
-	accumulator = 0,
-	nucleotide = 0;
-      
-      const unsigned int
-	*bitVector = getBitVector(tr->dataVector[i]);          
-      
-      for(j = 1; j <= tr->mxtips; j++)
-	{	   
-	  if(tr->yVector[j][i] != undetermined)
-	    {
-	      nucleotide = bitVector[tr->yVector[j][i]];	
-	      assert(nucleotide > 0);	      	     
-	      
-	      if((nucleotide & accumulator) == 0)
-		{
-		  count++;
-		  accumulator |= nucleotide;
-		}
-	    }	  
-	}
-   
-      assert(count >= 0);
-      
-      minWeights[i] = (unsigned int)count;
-    }
-}
 
 
-static void morphologicalCalibrationParsimony(tree *tr)
-{
-  int
-    i;
 
-  unsigned int
-    maximumDifference = 0,
-    parsimonyScore = 0,
-    *siteParsimony = (unsigned int*)calloc(tr->cdta->endsite, sizeof(unsigned int)),
-    *minWeights    = (unsigned int*)calloc(tr->cdta->endsite, sizeof(unsigned int));
-  
-  double 
-    scaler;
-
-  char    
-    integerFileName[1024] = "";
-
-  FILE 
-    *integerFile; 
-  
-  minimumWeights(tr, minWeights);
- 
-  initravParsimonyNormal(tr, tr->start);
-  initravParsimonyNormal(tr, tr->start->back);  
-  
-  parsimonyScore = evaluatePerSiteParsimony(tr, tr->start, siteParsimony);
-
-  /*printf("Parsimony Score: %u \n\n", parsimonyScore);*/
-
-  for(i = 0; i < tr->cdta->endsite; i++)
-    {
-      assert(siteParsimony[i] >= minWeights[i]);
-      
-      siteParsimony[i] = siteParsimony[i] - minWeights[i];
-      
-      /*printf("%u ", siteParsimony[i]);*/
-      
-      if(siteParsimony[i] > maximumDifference)
-	maximumDifference = siteParsimony[i];
-    }
-  
-  /* printf("\nMax diff: %u\n", maximumDifference); */
- 
-
-  strcpy(integerFileName,         workdir);
-  strcat(integerFileName,         "RAxML_parsimonyWeights.");
-  strcat(integerFileName,         run_id);
-
-  integerFile = myfopen(integerFileName, "wb");  
-
-  scaler = 100.0 / (double)maximumDifference;
-
-  for(i = 0; i < tr->cdta->endsite; i++)   
-    {
-      unsigned int 
-	value = 100 - (unsigned int)((double)siteParsimony[i] * scaler + 0.5);
-
-      fprintf(integerFile, "%u ", value);
-    }
-    
-  fclose(integerFile);
- 
-  printBothOpen("RAxML calibrated parsimony-based integer weight file written to: %s\n", integerFileName);
-
-  exit(0);
-}
 
 
 
@@ -8727,8 +8009,7 @@ void writeBinaryModel(tree *tr)
   myfwrite(tr->cdta->rateCategory, sizeof(int), tr->rdta->sites + 1, f);
   myfwrite(tr->cdta->patrat, sizeof(double), tr->rdta->sites + 1, f);
   myfwrite(tr->cdta->patratStored, sizeof(double), tr->rdta->sites + 1, f);
-  myfwrite(tr->cdta->wr, sizeof(double), tr->rdta->sites + 1, f);
-  myfwrite(tr->cdta->wr2, sizeof(double), tr->rdta->sites + 1, f);
+  
   
   /* pInfo */
    
@@ -8771,15 +8052,19 @@ void readBinaryModel(tree *tr)
     model;
 
   FILE 
-    *f = fopen(binaryModelParamsInputFileName, "r");   
+    *f;
+
+
+  printBothOpen("\nRAxML is reading a binary model file and not optimizing model params\n");
+
+  f = fopen(binaryModelParamsInputFileName, "r");   
 
   /* cdta */   
 
   myfread(tr->cdta->rateCategory, sizeof(int),    (size_t)(tr->rdta->sites + 1), f);
   myfread(tr->cdta->patrat,       sizeof(double), (size_t)(tr->rdta->sites + 1), f);
   myfread(tr->cdta->patratStored, sizeof(double), (size_t)(tr->rdta->sites + 1), f);
-  myfread(tr->cdta->wr,           sizeof(double), (size_t)(tr->rdta->sites + 1), f);
-  myfread(tr->cdta->wr2,          sizeof(double), (size_t)(tr->rdta->sites + 1), f);
+  
   
   /* pInfo */
    
@@ -8803,7 +8088,7 @@ void readBinaryModel(tree *tr)
     }
 
 #ifdef _USE_PTHREADS
-  /* TODO need to add stuff if we want this to work for CAT models and SP implementations as well */
+  /* TODO need to add stuff if we want this to work for CAT models as well */
   masterBarrier(THREAD_RESET_MODEL, tr);
 #endif  
 
@@ -8813,7 +8098,7 @@ void readBinaryModel(tree *tr)
 
 void testGapped(tree *tr)
 {
-  if(!tr->saveMemory && tr->rateHetModel == GAMMA && tr->useGappedImplementation == FALSE)
+  if((!tr->saveMemory) && (!tr->estimatePerSiteAA) && tr->rateHetModel == GAMMA && tr->useGappedImplementation == FALSE)
     {
       int 
 	i;
@@ -8898,6 +8183,8 @@ unsigned int precomputed16_bitcount (unsigned int n)
 }
 
 
+
+
 int main (int argc, char *argv[])
 {
   rawdata      *rdta;
@@ -8924,18 +8211,12 @@ int main (int argc, char *argv[])
 
   masterTime = gettime();
 
-#ifdef _IPTOL
-  lastCheckpointTime = masterTime;
-#endif
+  globalArgc = argc;
+  globalArgv = (char **)malloc(sizeof(char *) * argc);
+  for(i = 0; i < argc; i++)
+    globalArgv[i] = argv[i];
 
 
-#ifdef  _USE_FPGA_LOG
-  log_approx_init(12);
-#endif
-
-#ifdef _USE_FPGA_EXP
-  exp_approx_init();
-#endif
 
 #if ! (defined(__ppc) || defined(__powerpc__) || defined(PPC))
 
@@ -9002,7 +8283,7 @@ int main (int argc, char *argv[])
 
  
   if(!adef->readTaxaOnly && adef->mode != FAST_SEARCH && adef->mode != SH_LIKE_SUPPORTS)
-    // checkSequences(tr, rdta, adef);
+    checkSequences(tr, rdta, adef);
   
 
   if(adef->mode == SPLIT_MULTI_GENE)
@@ -9040,7 +8321,7 @@ int main (int argc, char *argv[])
 	{
 	  if(tr->partitionData[i].dataType == AA_DATA)
 	    {
-	      if(tr->partitionData[i].protModels == GTR)
+	      if(tr->partitionData[i].protModels == GTR || tr->partitionData[i].protModels == GTR_UNLINKED)
 		countGTR++;
 	      else
 		countOtherModel++;
@@ -9051,13 +8332,13 @@ int main (int argc, char *argv[])
 	{
 	  printf("Error, it is only allowed to conduct partitioned AA analyses\n");
 	  printf("with a GTR model of AA substitution, if all AA partitions are assigned\n");
-	  printf("the GTR model.\n\n");
+	  printf("the GTR or GTR_UNLINKED model.\n\n");
 	  
 	  printf("The following partitions do not use GTR:\n");
 	  
 	  for(i = 0; i < tr->NumberOfModels; i++)
 	    {
-	      if(tr->partitionData[i].dataType == AA_DATA && tr->partitionData[i].protModels != GTR)
+	      if(tr->partitionData[i].dataType == AA_DATA && (tr->partitionData[i].protModels != GTR || tr->partitionData[i].protModels != GTR_UNLINKED))
 		printf("Partition %s\n", tr->partitionData[i].partitionName);
 	    }
 	  printf("exiting ...\n");
@@ -9070,13 +8351,14 @@ int main (int argc, char *argv[])
 
 	  printBoth(info, "You are using the GTR model of AA substitution!\n");
 	  printBoth(info, "GTR parameters for AA substiution will automatically be estimated\n");
-	  printBoth(info, "jointly (GTR params will be linked) across all partitions to avoid over-parametrization!\n\n\n");
+	  printBoth(info, "either jointly (GTR params will be linked) or independently (when using GTR_UNLINKED) across all partitions.\n");
+	  printBoth(info, "WARNING: you may be over-parametrizing the model!\n\n\n");
 
 	  fclose(info);
 	}
     }
 
-  if(adef->mode == CLASSIFY_ML)              
+  if(adef->mode == CLASSIFY_ML || adef->mode == CLASSIFY_MP)              
     tr->innerNodes = (size_t)(countTaxaInTopology() - 1);   
   else
     tr->innerNodes = tr->mxtips;
@@ -9099,9 +8381,10 @@ int main (int argc, char *argv[])
   printModelAndProgramInfo(tr, adef, argc, argv);
 
   switch(adef->mode)
-    {
-    case THOROUGH_PARSIMONY:
-      makeParsimonyTreeThorough(tr, adef);
+    {  
+    case CLASSIFY_MP:
+      getStartingTree(tr, adef);
+      assert(0);
       break;
     case CLASSIFY_ML:
       initModel(tr, rdta, cdta, adef);
@@ -9168,6 +8451,17 @@ int main (int argc, char *argv[])
 	  printLog(tr, adef, TRUE);
 	  printResult(tr, adef, TRUE);
 	}
+  
+      break;
+    case ANCESTRAL_STATES:
+      initModel(tr, rdta, cdta, adef);
+      
+      getStartingTree(tr, adef);
+      modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, FALSE);
+       
+      evaluateGenericInitrav(tr, tr->start);                                       	                  
+      
+      computeAncestralStates(tr, tr->likelihood, adef);
       break;
     case CALC_BIPARTITIONS:      
       calcBipartitions(tr, adef, tree_file, bootStrapFile);
@@ -9177,19 +8471,13 @@ int main (int argc, char *argv[])
 	doBootstrap(tr, adef, rdta, cdta);
       else
 	{
-
 	  if(adef->rapidBoot)
 	    {
 	      initModel(tr, rdta, cdta, adef);
-
 	      doAllInOne(tr, adef);
 	    }
-	  else
-	    {
-	    
-	      doInference(tr, adef, rdta, cdta);
-	     
-	    }
+	  else	    	    
+	    doInference(tr, adef, rdta, cdta);	     	
 	}
       break;
     case MORPH_CALIBRATOR:
@@ -9197,12 +8485,7 @@ int main (int argc, char *argv[])
       getStartingTree(tr, adef);
       modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, FALSE);
       morphologicalCalibration(tr, adef);
-      break;
-    case MORPH_CALIBRATOR_PARSIMONY:
-      initModel(tr, rdta, cdta, adef);
-      getStartingTree(tr, adef);     
-      morphologicalCalibrationParsimony(tr);
-      break;
+      break;    
     case MESH_TREE_SEARCH:
       initModel(tr, rdta, cdta, adef); 
       getStartingTree(tr, adef); 
@@ -9214,13 +8497,7 @@ int main (int argc, char *argv[])
       exit(0);
     case SH_LIKE_SUPPORTS:
       shSupports(tr, adef, rdta, cdta);
-      break;
-    case EPA_ROGUE_TAXA:
-      initModel(tr, rdta, cdta, adef);
-      getStartingTree(tr, adef);
-      modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, FALSE);
-      computeRogueTaxaEPA(tr);
-      break;
+      break;    
     case EPA_SITE_SPECIFIC_BIAS:
       initModel(tr, rdta, cdta, adef);
       getStartingTree(tr, adef);

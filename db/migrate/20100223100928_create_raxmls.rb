@@ -13,4 +13,5 @@ class CreateRaxmls < ActiveRecord::Migration
   def self.down
     drop_table :raxmls
   end
+
 end

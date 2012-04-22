@@ -4,8 +4,10 @@ require "#{RAILS_ROOT}/app/models/fasta_to_phylip.rb"
 
 class RaxmlAlignmentfileParser
   
-attr_reader :format, :valid_format, :error ,:data , :ali_length, :log
-  def initialize(stream)
+attr_reader :format, :valid_format, :error ,:data , :ali_length, :log, :het_model, :partition_file
+  def initialize(stream, het_model, partition_file)
+    @het_model = het_model
+    @partition_file = partition_file
     @log = []
     @filename = ""
     @data = []
@@ -171,7 +173,17 @@ attr_reader :format, :valid_format, :error ,:data , :ali_length, :log
     f = File.open(file,'wb')
     @data.each {|d| f.write(d)}
     f.close
-    cmd = "#{RAILS_ROOT}/bioprogs/raxml/raxmlHPC-SSE3  -s #{file} -fc -m GTRGAMMA -n test"
+    
+    puts "#############"
+    puts @het_model
+    puts @partition_file
+    puts "#############"
+
+    cmd = "#{RAILS_ROOT}/bioprogs/raxml/raxmlHPC-SSE3  -s #{file} -fc -m  #{@het_model} -n checkFormat"
+    if !(@partition_file.nil? || @partition_file.eql?(""))
+      cmd = cmd + "-q #{@partition_file}"
+    end
+
     #let RAxML check if phylip format is correct
     POpen4::popen4( cmd ) do |stdout, stderr, stdin|
       stdout.each do |line|

@@ -113,11 +113,7 @@ boolean update(tree *tr, nodeptr p)
   for(i = 0; i < tr->numBranches; i++)
     {         
       if(!tr->partitionConverged[i])
-	{
-
-	  if(tr->useFloat)
-	    _deltaz = 0.00002;
-	  else
+	{	  
 	    _deltaz = deltaz;
 	    
 	  if(ABS(z[i] - z0[i]) > _deltaz)  
@@ -915,9 +911,7 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
       else
 	index = i;
       
-#ifdef _IPTOL
-      writeCheckpoint();
-#endif
+
 
       if(rearrangeBIG(tr, tr->nodep[index], mintrav, maxtrav))
 	{    
@@ -954,9 +948,7 @@ double treeOptimizeRapid(tree *tr, int mintrav, int maxtrav, analdef *adef, best
       for(i = 0; i < iList.valid; i++)
 	{ 
 	  
-#ifdef _IPTOL
-	  writeCheckpoint();
-#endif
+
 	  tr->bestOfNode = unlikely;
 	  
 	  if(rearrangeBIG(tr, iList.list[i].node, mintrav, maxtrav))
@@ -1097,9 +1089,7 @@ int determineRearrangementSetting(tree *tr,  analdef *adef, bestlist *bestT, bes
       for(i = 1; i <= tr->mxtips + tr->mxtips - 2; i++)
 	{                
 
-#ifdef _IPTOL
-	  writeCheckpoint();
-#endif
+
 
 	  if(adef->permuteTreeoptimize)
 	    index = perm[i];
@@ -1203,7 +1193,16 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   Thorough = 0;     
   
   if(estimateModel)
-    modOpt(tr, adef, FALSE, 10.0, FALSE);
+    {
+      if(adef->useBinaryModelFile)
+	{
+	  readBinaryModel(tr);
+	  evaluateGenericInitrav(tr, tr->start);
+	  treeEvaluate(tr, 2);
+	}
+      else
+	modOpt(tr, adef, FALSE, 10.0, FALSE);
+    }
   else
     treeEvaluate(tr, 2);  
 
@@ -1218,7 +1217,12 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
     bestTrav = adef->bestTrav = adef->initial;
 
   if(estimateModel)
-    modOpt(tr, adef, FALSE, 5.0, FALSE);
+    {
+      if(adef->useBinaryModelFile)	
+	treeEvaluate(tr, 2);
+      else
+	modOpt(tr, adef, FALSE, 5.0, FALSE);
+    }
   else
     treeEvaluate(tr, 1);
   
@@ -1300,6 +1304,12 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
 	
     }
 
+  if(tr->searchConvergenceCriterion)
+    {
+      cleanupHashTable(h, 0);
+      cleanupHashTable(h, 1);
+    }
+
  cleanup_fast:
 
   Thorough = 1;
@@ -1307,7 +1317,12 @@ void computeBIGRAPID (tree *tr, analdef *adef, boolean estimateModel)
   
   recallBestTree(bestT, 1, tr); 
   if(estimateModel)
-    modOpt(tr, adef, FALSE, 1.0, FALSE);
+    {
+      if(adef->useBinaryModelFile)	
+	treeEvaluate(tr, 2);
+      else
+	modOpt(tr, adef, FALSE, 1.0, FALSE);
+    }
   else
     treeEvaluate(tr, 1.0);
 
@@ -1579,9 +1594,7 @@ boolean treeEvaluate (tree *tr, double smoothFactor)       /* Evaluate a user tr
 {
   boolean result;
  
-#ifdef _IPTOL
-  writeCheckpoint();
-#endif
+
 
   if(tr->multiGene)
     result = smoothTreeMulti(tr, (int)((double)smoothings * smoothFactor));
@@ -1592,9 +1605,7 @@ boolean treeEvaluate (tree *tr, double smoothFactor)       /* Evaluate a user tr
 
   evaluateGeneric(tr, tr->start);   
     
-#ifdef _IPTOL
-  writeCheckpoint();
-#endif
+
 
   return TRUE;
 }
