@@ -216,48 +216,6 @@ static void sumCAT(int tipCase, double *sum, double *x1_start, double *x2_start,
 
 
 
-static void sumCAT_FLOAT(int tipCase, float *sum, float *x1_start, float *x2_start, float *tipVector,
-			 unsigned char *tipX1, unsigned char *tipX2, int n)
-{
-  int i, j;
-  float *x1, *x2;
-
-  switch(tipCase)
-    {
-    case TIP_TIP:
-      for (i = 0; i < n; i++)
-	{
-	  x1 = &(tipVector[4 * tipX1[i]]);
-	  x2 = &(tipVector[4 * tipX2[i]]);
-
-	  for(j = 0; j < 4; j++)
-	    sum[i * 4 + j]     = x1[j] * x2[j];
-	}
-      break;
-    case TIP_INNER:
-      for (i = 0; i < n; i++)
-	{
-	  x1 = &(tipVector[4 * tipX1[i]]);
-	  x2 = &x2_start[4 * i];
-
-	  for(j = 0; j < 4; j++)
-	    sum[i * 4 + j]     = x1[j] * x2[j];
-	}
-      break;
-    case INNER_INNER:
-      for (i = 0; i < n; i++)
-	{
-	  x1 = &x1_start[4 * i];
-	  x2 = &x2_start[4 * i];
-
-	  for(j = 0; j < 4; j++)
-	    sum[i * 4 + j]     = x1[j] * x2[j];
-	}
-      break;
-    default:
-      assert(0);
-    }
-}
 
 static void coreGTRCAT_BINARY(int upper, int numberOfCategories, double *sum,
 			      volatile double *d1, volatile double *d2, double *wrptr, double *wr2ptr,
@@ -343,7 +301,7 @@ static void coreGTRCAT(int upper, int numberOfCategories, double *sum,
   e2v[0]= _mm_load_pd(&e2[0]);
   e2v[1]= _mm_load_pd(&e2[2]);
 
-  d = d_start = (double *)malloc_aligned(numberOfCategories * 4 * sizeof(double));
+  d = d_start = (double *)malloc_aligned(numberOfCategories * 4 * sizeof(double), 16);
 
   dd1 = EIGN[0] * lz;
   dd2 = EIGN[1] * lz;
@@ -368,7 +326,7 @@ static void coreGTRCAT(int upper, int numberOfCategories, double *sum,
       __m128d inv_Liv    = _mm_add_pd(tmp_0v, tmp_1v);      
             	  
       __m128d dlnLidlzv   = _mm_add_pd(_mm_mul_pd(tmp_0v, e1v[0]), _mm_mul_pd(tmp_1v, e1v[1]));	  
-      __m128d d2lnLidlz2v = _mm_add_pd(_mm_mul_pd(tmp_0v, e2v[0]), _mm_mul_pd(tmp_1v, e2v[2]));
+      __m128d d2lnLidlz2v = _mm_add_pd(_mm_mul_pd(tmp_0v, e2v[0]), _mm_mul_pd(tmp_1v, e2v[1]));
 
 
       inv_Liv   = _mm_hadd_pd(inv_Liv, inv_Liv);
@@ -467,76 +425,6 @@ static void coreGTRCAT(int upper, int numberOfCategories, double *sum,
 #endif
 
 
-static void coreGTRCAT_FLOAT(int upper, int numberOfCategories, float *sum,
-			     volatile double *d1, volatile double *d2, float *wrptr, float *wr2ptr,
-			     double *rptr, double *EIGN, int *cptr, double lz)
-{
-  int i;
-  float
-    *d, *d_start,
-    tmp_0, tmp_1, tmp_2, inv_Li, dlnLidlz, d2lnLidlz2,
-    dlnLdlz = 0.0,
-    d2lnLdlz2 = 0.0,
-    ef[6];
-  double e[6];
-  double dd1, dd2, dd3;
-
-  e[0] = EIGN[0];
-  e[1] = EIGN[0] * EIGN[0];
-  e[2] = EIGN[1];
-  e[3] = EIGN[1] * EIGN[1];
-  e[4] = EIGN[2];
-  e[5] = EIGN[2] * EIGN[2];
-
-  for(i = 0; i < 6; i++)
-    ef[i] = (float)e[i];
-
-  d = d_start = (float *)malloc(numberOfCategories * 4 * sizeof(float));
-
-  dd1 = e[0] * lz;
-  dd2 = e[2] * lz;
-  dd3 = e[4] * lz;
-
-  for(i = 0; i < numberOfCategories; i++)
-    {
-      d[i * 4]     = ((float)EXP(dd1 * rptr[i]));
-      d[i * 4 + 1] = ((float)EXP(dd2 * rptr[i]));
-      d[i * 4 + 2] = ((float)EXP(dd3 * rptr[i]));
-    }
-
-  for (i = 0; i < upper; i++)
-    {
-      d = &d_start[4 * cptr[i]];
-
-      inv_Li = sum[4 * i];
-      inv_Li += (tmp_0 = d[0] * sum[4 * i + 1]);
-      inv_Li += (tmp_1 = d[1] * sum[4 * i + 2]);
-      inv_Li += (tmp_2 = d[2] * sum[4 * i + 3]);
-
-      inv_Li = 1.0/inv_Li;
-
-      dlnLidlz   = tmp_0 * ef[0];
-      d2lnLidlz2 = tmp_0 * ef[1];
-
-      dlnLidlz   += tmp_1 * ef[2];
-      d2lnLidlz2 += tmp_1 * ef[3];
-
-      dlnLidlz   += tmp_2 * ef[4];
-      d2lnLidlz2 += tmp_2 * ef[5];
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-
-      dlnLdlz   += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wr2ptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *d1 = (double)dlnLdlz;
-  *d2 = (double)d2lnLdlz2;
-
-  free(d_start);
-}
 
 
 
@@ -617,72 +505,6 @@ static void sumGTRCATPROT(int tipCase, double *sumtable, double *x1, double *x2,
 }
 
 
-static void sumGTRCATPROT_FLOAT(int tipCase, float *sumtable, float *x1, float *x2, float *tipVector,
-				unsigned char *tipX1, unsigned char *tipX2, int n)
-{
-  int i, l;
-  float *sum, *left, *right;
-
-  switch(tipCase)
-    {
-    case TIP_TIP:
-      for (i = 0; i < n; i++)
-	{
-	  left  = &(tipVector[20 * tipX1[i]]);
-	  right = &(tipVector[20 * tipX2[i]]);
-	  sum = &sumtable[20 * i];
-#ifdef __SIM_SSE3
-	  for(l = 0; l < 20; l+=4)
-	    {
-	      __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[l]), _mm_load_ps(&right[l]));
-	      _mm_store_ps(&sum[l], sumv);	
-	    }
-#else
-	  for(l = 0; l < 20; l++)
-	    sum[l] = left[l] * right[l];
-#endif
-	}
-      break;
-    case TIP_INNER:
-      for (i = 0; i < n; i++)
-	{
-	  left = &(tipVector[20 * tipX1[i]]);
-	  right = &x2[20 * i];
-	  sum = &sumtable[20 * i];
-#ifdef __SIM_SSE3
-	  for(l = 0; l < 20; l+=4)
-	    {
-	      __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[l]), _mm_load_ps(&right[l]));
-	      _mm_store_ps(&sum[l], sumv);	
-	    }
-#else
-	  for(l = 0; l < 20; l++)
-	    sum[l] = left[l] * right[l];
-#endif
-	}
-      break;
-    case INNER_INNER:
-      for (i = 0; i < n; i++)
-	{
-	  left  = &x1[20 * i];
-	  right = &x2[20 * i];
-	  sum = &sumtable[20 * i];
-#ifdef __SIM_SSE3
-	  for(l = 0; l < 20; l+=4)
-	    {
-	      __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[l]), _mm_load_ps(&right[l]));
-	      _mm_store_ps(&sum[l], sumv);	
-	    }
-#else
-	  for(l = 0; l < 20; l++)
-	    sum[l] = left[l] * right[l];
-#endif
-	}
-      break;
-    default:
-      assert(0);
-    }
-}
 
 static void sumGTRCATSECONDARY(int tipCase, double *sumtable, double *x1, double *x2, double *tipVector,
 			       unsigned char *tipX1, unsigned char *tipX2, int n)
@@ -886,7 +708,7 @@ static void coreGTRCATPROT(double *EIGN, double lz, int numberOfCategories, doub
   double  dlnLdlz = 0.0;
   double  d2lnLdlz2 = 0.0;
 
-  d1 = d_start = (double *)malloc_aligned(numberOfCategories * 20 * sizeof(double));
+  d1 = d_start = (double *)malloc_aligned(numberOfCategories * 20 * sizeof(double), 16);
 
   e[0] = 0.0;
   s[0] = 0.0; 
@@ -1011,148 +833,7 @@ static void coreGTRCATPROT(double *EIGN, double lz, int numberOfCategories, doub
 
 #endif
 
-#ifdef __SIM_SSE3
 
-static void coreGTRCATPROT_FLOAT(double *EIGN, double lz, int numberOfCategories, double *rptr, int *cptr, int upper,
-				 float *wrptr, float *wr2ptr,  volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, float *sumtable)
-{
-  int i, l;
-  float *d1, *d_start, *sum,
-    e[20] __attribute__ ((aligned (16))), 
-    s[20] __attribute__ ((aligned (16)));
- 
-  double 
-    dd[20];
-
-  float 
-    inv_Li, dlnLidlz, d2lnLidlz2,
-    dlnLdlz = 0.0,
-    d2lnLdlz2 = 0.0;
-
-  d1 = d_start = (float *)malloc_aligned(numberOfCategories * 20 * sizeof(float));
-
-  e[0] = 0.0;
-  s[0] = 0.0;
-
-  for(l = 1; l < 20; l++)
-    {
-      e[l]  = (float)(EIGN[l-1] * EIGN[l-1]);
-      s[l]  = (float)(EIGN[l-1]);
-      dd[l] = EIGN[l-1] * lz;
-    }
-
-  for(i = 0; i < numberOfCategories; i++)
-    {
-      d1[20 * i] = 1.0;
-
-      for(l = 1; l < 20; l++)
-	d1[20 * i + l] = ((float)EXP(dd[l] * rptr[i]));
-    }
-
-  for (i = 0; i < upper; i++)
-    {
-      d1 = &d_start[20 * cptr[i]];
-      sum = &sumtable[20 * i];
-
-      __m128 a0 = _mm_setzero_ps();
-      __m128 a1 = _mm_setzero_ps();
-      __m128 a2 = _mm_setzero_ps();
-
-      for(l = 0; l < 20; l+=4)
-	{
-	  __m128 tmpv = _mm_mul_ps(_mm_load_ps(&d1[l]), _mm_load_ps(&sum[l]));
-	  a0 = _mm_add_ps(a0, tmpv);
-	  a1 = _mm_add_ps(a1, _mm_mul_ps(tmpv, _mm_load_ps(&s[l])));
-	  a2 = _mm_add_ps(a2, _mm_mul_ps(tmpv, _mm_load_ps(&e[l])));	  	 
-	}
-
-      a0 = _mm_hadd_ps(a0, a0);
-      a0 = _mm_hadd_ps(a0, a0);
-      a1 = _mm_hadd_ps(a1, a1);
-      a1 = _mm_hadd_ps(a1, a1);
-      a2 = _mm_hadd_ps(a2, a2);
-      a2 = _mm_hadd_ps(a2, a2);
-
-      _mm_store_ss(&inv_Li, a0);
-      _mm_store_ss(&dlnLidlz, a1);
-      _mm_store_ss(&d2lnLidlz2, a2);
-
-      inv_Li = 1.0/inv_Li;
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-      dlnLdlz  += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wr2ptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *ext_dlnLdlz   = (double)dlnLdlz;
-  *ext_d2lnLdlz2 = (double)d2lnLdlz2;
-
-  free(d_start);
-}
-
-#else
-
-static void coreGTRCATPROT_FLOAT(double *EIGN, double lz, int numberOfCategories, double *rptr, int *cptr, int upper,
-				 float *wrptr, float *wr2ptr,  volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, float *sumtable)
-{
-  int i, l;
-  float *d1, *d_start, *sum;
-  float e[20], s[20];
-  double dd[20];
-  float 
-    tmp, inv_Li, dlnLidlz, d2lnLidlz2,
-    dlnLdlz = 0.0,
-    d2lnLdlz2 = 0.0;
-
-  d1 = d_start = (float *)malloc(numberOfCategories * 20 * sizeof(float));
-
-  for(l = 1; l < 20; l++)
-    {
-      e[l]  = (float)(EIGN[l-1] * EIGN[l-1]);
-      s[l]  = (float)EIGN[l-1];
-      dd[l] =  EIGN[l-1] * lz;
-    }
-
-  for(i = 0; i < numberOfCategories; i++)
-    {
-      for(l = 1; l < 20; l++)
-	d1[20 * i + l] = ((float)EXP(dd[l] * rptr[i]));
-    }
-
-  for (i = 0; i < upper; i++)
-    {
-      d1 = &d_start[20 * cptr[i]];
-      sum = &sumtable[20 * i];
-
-      inv_Li     = sum[0];
-      dlnLidlz   = 0.0;
-      d2lnLidlz2 = 0.0;
-
-      for(l = 1; l < 20; l++)
-	{
-	  inv_Li     += (tmp = d1[l] * sum[l]);
-	  dlnLidlz   += tmp *  s[l];
-	  d2lnLidlz2 += tmp *  e[l];
-	}
-
-      inv_Li = 1.0/inv_Li;
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-      dlnLdlz  += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wr2ptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *ext_dlnLdlz   = (double)dlnLdlz;
-  *ext_d2lnLdlz2 = (double)d2lnLdlz2;
-
-  free(d_start);
-}
-
-#endif
 
 static void coreCatFlex(double *EIGN, double lz, int numberOfCategories, double *rptr, int *cptr, int upper,
 			double *wrptr, double *wr2ptr,  volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, double *sumtable,
@@ -1257,6 +938,83 @@ static void coreGammaFlex(double *gammaRates, double *EIGN, double *sumtable, in
 
   for (i = 0; i < upper; i++)
     {
+      sum = &sumtable[i * gammaStates];
+      inv_Li   = 0.0;
+      dlnLidlz = 0.0;
+      d2lnLidlz2 = 0.0;
+
+      for(j = 0; j < 4; j++)
+	{
+	  inv_Li += sum[j * numStates];
+
+	  for(l = 1; l < numStates; l++)
+	    {
+	      inv_Li     += (tmp = diagptable[j * gammaStates + l * 4] * sum[j * numStates + l]);
+	      dlnLidlz   +=  tmp * diagptable[j * gammaStates + l * 4 + 1];
+	      d2lnLidlz2 +=  tmp * diagptable[j * gammaStates + l * 4 + 2];
+	    }
+	}
+
+      inv_Li = 1.0 / inv_Li;
+
+      dlnLidlz   *= inv_Li;
+      d2lnLidlz2 *= inv_Li;
+
+      dlnLdlz   += wrptr[i] * dlnLidlz;
+      d2lnLdlz2 += wrptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
+    }
+
+  *ext_dlnLdlz   = dlnLdlz;
+  *ext_d2lnLdlz2 = d2lnLdlz2;
+}
+static void coreGammaFlex_perSite(siteAAModels *siteProtModel, int* perSiteAA, double *gammaRates, double *sumtable, int upper, int *wrptr,
+				  volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, double lz, const int numStates)
+{
+  double  
+    *sum, 
+    dlnLdlz = 0.0,
+    d2lnLdlz2 = 0.0,
+    ki, 
+    kisqr,
+    tmp,
+    inv_Li, 
+    dlnLidlz, 
+    d2lnLidlz2;
+
+  int
+    p,
+    i, 
+    j, 
+    l;  
+
+  const int 
+    gammaStates = 4 * numStates;
+
+  for(p = 0; p < (NUM_PROT_MODELS - 3); p++)
+    {
+      double 
+	*diagptable = siteProtModel[p].left,
+	*EIGN       = siteProtModel[p].EIGN;
+
+      for(i = 0; i < 4; i++)
+	{
+	  ki = gammaRates[i];
+	  kisqr = ki * ki;
+	  
+	  for(l = 1; l < numStates; l++)
+	    {
+	      diagptable[i * gammaStates + l * 4]     = EXP(EIGN[l-1] * ki * lz);
+	      diagptable[i * gammaStates + l * 4 + 1] = EIGN[l-1] * ki;
+	      diagptable[i * gammaStates + l * 4 + 2] = EIGN[l-1] * EIGN[l-1] * kisqr;
+	    }
+	}
+    }
+
+  for (i = 0; i < upper; i++)
+    {
+      double 
+	*diagptable =  siteProtModel[perSiteAA[i]].left;
+
       sum = &sumtable[i * gammaStates];
       inv_Li   = 0.0;
       dlnLidlz = 0.0;
@@ -2013,96 +1771,7 @@ static void sumGAMMA(int tipCase, double *sumtable, double *x1_start, double *x2
 }
 
 
-static void sumGAMMA_FLOAT(int tipCase, float *sumtable, float *x1_start, float *x2_start, float *tipVector,
-			   unsigned char *tipX1, unsigned char *tipX2, int n)
-{
-  float *x1, *x2, *sum;
-  int i, j;
-#ifndef __SIM_SSE3  
-  int k;
-#endif
 
-  switch(tipCase)
-    {
-    case TIP_TIP:      
-      for (i = 0; i < n; i++)
-	{
-#ifdef __SIM_SSE3
-	  __m128 x1_0, x2_0;
-#endif
-	  x1 = &(tipVector[4 * tipX1[i]]);
-	  x2 = &(tipVector[4 * tipX2[i]]);
-	  sum = &sumtable[i * 16];
-
-
-#ifndef __SIM_SSE3
-	  for(j = 0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      sum[j * 4 + k] = x1[k] * x2[k];
-#else
-	  x1_0 = _mm_load_ps(x1);
-	  x2_0 = _mm_load_ps(x2);
-	  x1_0 = _mm_mul_ps( x1_0, x2_0 );
-
-	  for(j = 0; j < 4; j++)	    
-	    _mm_store_ps( &sum[j * 4], x1_0);	    
-#endif
-	}
-      break;
-    case TIP_INNER:
-      for (i = 0; i < n; i++)
-	{
-#ifdef __SIM_SSE3
-	  __m128 x1_0, x2_0;
-#endif
-	  x1  = &(tipVector[4 * tipX1[i]]);
-	  x2  = &x2_start[16 * i];
-	  sum = &sumtable[16 * i];
-#ifndef __SIM_SSE3
-	  for(j = 0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      sum[j * 4 + k] = x1[k] * x2[j * 4 + k];
-#else
-	  x1_0 = _mm_load_ps(x1);
-	  for(j = 0; j < 4; j++)
-	    {
-	      x2_0 = _mm_load_ps( &x2[j*4]);
-	      x2_0 = _mm_mul_ps( x1_0, x2_0 );
-	      _mm_store_ps( &sum[j * 4], x2_0 );
-	    }
-#endif
-	}
-      break;
-    case INNER_INNER:
-      for (i = 0; i < n; i++)
-	{
-#ifdef __SIM_SSE3
-	  __m128 x1_0, x2_0;
-#endif
-	  x1  = &x1_start[16 * i];
-	  x2  = &x2_start[16 * i];
-	  sum = &sumtable[16 * i];
-
-#ifndef __SIM_SSE3
-	  for(j = 0; j < 4; j++)
-	    for(k = 0; k < 4; k++)
-	      sum[j * 4 + k] = x1[j * 4 + k] * x2[j * 4 + k];
-
-#else
-	  for(j = 0; j < 4; j++)
-	    {
-	      x1_0 = _mm_load_ps(& x1[j * 4]);
-	      x2_0 = _mm_load_ps(& x2[j * 4]);
-	      x1_0 = _mm_mul_ps( x1_0, x2_0 );
-	      _mm_store_ps( &sum[j * 4], x1_0 );
-	    }
-#endif
-	}
-      break;
-    default:
-      assert(0);
-    }
-}
 
 #ifndef __SIM_SSE3
 static void coreGTRGAMMA_BINARY(const int upper, double *sumtable,
@@ -2405,188 +2074,7 @@ static void coreGTRGAMMA(const int upper, double *sumtable,
 
 
 
-#ifndef __SIM_SSE3
 
-static void coreGTRGAMMA_FLOAT(const int upper, float *sumtable,
-			       volatile double *d1,   volatile double *d2, double *EIGN, double *gammaRates, double lz, int *wrptr)
-{
-  int i, j, k;
-  double ki, kisqr;
-
-  float
-    *diagptable, *diagptable_start, *sum,
-    tmp_1, inv_Li, dlnLidlz, d2lnLidlz2,
-    dlnLdlz = 0.0,
-    d2lnLdlz2 = 0.0;
-
-  diagptable = diagptable_start = (float *)malloc(sizeof(float) * 64);
-
-  for(i = 0; i < 4; i++)
-    {
-      ki = gammaRates[i];
-      kisqr = ki * ki;
-
-      diagptable[i * 16]     = ((float)EXP (EIGN[0] * ki * lz));
-      diagptable[i * 16 + 1] = ((float)EXP (EIGN[1] * ki * lz));
-      diagptable[i * 16 + 2] = ((float)EXP (EIGN[2] * ki * lz));
-
-      diagptable[i * 16 + 3] = ((float)(EIGN[0] * ki));
-      diagptable[i * 16 + 4] = ((float)(EIGN[0] * EIGN[0] * kisqr));
-
-      diagptable[i * 16 + 5] = ((float)(EIGN[1] * ki));
-      diagptable[i * 16 + 6] = ((float)(EIGN[1] * EIGN[1] * kisqr));
-
-      diagptable[i * 16 + 7] = ((float)(EIGN[2] * ki));
-      diagptable[i * 16 + 8] = ((float)(EIGN[2] * EIGN[2] * kisqr));
-    }  
-
-  for (i = 0; i < upper; i++)
-    {
-      diagptable = diagptable_start;
-      sum = &(sumtable[i * 16]);
-
-      inv_Li      = 0.0;
-      dlnLidlz    = 0.0;
-      d2lnLidlz2  = 0.0;
-
-      for(j = 0; j < 4; j++)
-	{
-	  inv_Li += sum[4 * j];
-
-	  for(k = 0; k < 3; k++)
-	    {
-	      tmp_1      =  diagptable[16 * j + k] * sum[4 * j + k + 1];
-	      inv_Li     += tmp_1;
-	      dlnLidlz   += tmp_1 * diagptable[16 * j + k * 2 + 3];
-	      d2lnLidlz2 += tmp_1 * diagptable[16 * j + k * 2 + 4];
-	    }
-	}
-
-      inv_Li = 1.0 / inv_Li;
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-
-
-      dlnLdlz  += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wrptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *d1 = (double)dlnLdlz;
-  *d2 = (double)d2lnLdlz2;
-
-  free(diagptable_start);
-}
-
-#else
-
-static void coreGTRGAMMA_FLOAT(const int upper, float *sumtable,
-			       volatile double *d1,   volatile double *d2, double *EIGN, double *gammaRates, double lz, int *wrptr)
-{
-  int i, j, k;
-  double ki, kisqr;
-
-  float
-    e[16] __attribute__ ((aligned (16))),
-    e1[16] __attribute__ ((aligned (16))),
-    e2[16] __attribute__ ((aligned (16))),
-    out[4] __attribute__ ((aligned (16))),
-    *sum;
-
-
-  __m128
-    tmp_1,
-    inv_Li,
-    dlnLidlz,
-    d2lnLidlz2,
-    dlnLdlz = _mm_setzero_ps();
-
-  for(i = 0; i < 4; i++)
-    {
-      ki = gammaRates[i];
-      kisqr = ki * ki;
-
-      e[i * 4] = 1.0;
-      e1[i * 4] = 0.0;
-      e2[i * 4] = 0.0;
-
-      for(k = 1; k <= 3; k++)
-	{
-	  e[i * 4 + k]  = ((float)EXP(EIGN[k - 1] * ki * lz));
-	  e1[i * 4 + k] = ((float)(EIGN[k - 1] * ki));
-	  e2[i * 4 + k] = ((float)(EIGN[k - 1] * EIGN[k - 1] * kisqr));
-	}
-    }
-  
-  for (i = 0; i < upper; i++)
-    {
-#ifdef __SIM_SSE3
-      __m128 zero_s, tmp, wr_s;
-#endif
-      sum = &(sumtable[i * 16]);
-
-      inv_Li = _mm_setzero_ps();
-      dlnLidlz    = _mm_setzero_ps();
-      d2lnLidlz2  = _mm_setzero_ps();
-
-      for(j = 0; j < 4; j++)
-	{
-
-
-	  tmp_1 = _mm_load_ps(&sum[4 * j]);
-
-	  tmp_1 = _mm_mul_ps( tmp_1, _mm_load_ps( &e[4 * j] ) );
-	  inv_Li = _mm_add_ps( inv_Li, tmp_1 );
-	  dlnLidlz = _mm_add_ps( dlnLidlz, _mm_mul_ps( tmp_1, _mm_load_ps( &e1[4 * j] )));
-	  d2lnLidlz2 = _mm_add_ps( d2lnLidlz2, _mm_mul_ps( tmp_1, _mm_load_ps( &e2[4 * j] )));
-
-	}
-
-      // it's getting nasty: do the additions over the former k-loop
-      // using horizontal add
-      zero_s = _mm_setzero_ps();
-      inv_Li = _mm_hadd_ps( inv_Li, zero_s );
-      inv_Li = _mm_hadd_ps( inv_Li, zero_s );
-
-      // do scalar calculation of 1.0/inv_Li and move (shuffle) the reuslt to all vector entries
-      inv_Li = _mm_rcp_ss( inv_Li );
-      inv_Li = _mm_shuffle_ps( inv_Li, inv_Li, _MM_SHUFFLE( 0, 0, 0, 0));
-
-      // the k-llop additions for the other values.
-      // dlnLidlz and d2lnLidlz2 end up as the first two entries: (dlnLidlz, d2lnLidlz2, 0, 0)
-      // of the same vector
-      dlnLidlz = _mm_hadd_ps( dlnLidlz, d2lnLidlz2 );
-      dlnLidlz = _mm_hadd_ps( dlnLidlz, zero_s );
-      dlnLidlz = _mm_mul_ps( dlnLidlz, inv_Li );
-
-
-      // ok, the rest of the loop is fairly un-vectorish. try to do as much as possible
-      // with the current contents of the sse registers, tough.
-
-      // create (0, dlnLidlz * dlnLidlz, 0, 0)
-      tmp = _mm_mul_ss( dlnLidlz, dlnLidlz );
-      tmp = _mm_shuffle_ps( tmp, tmp, _MM_SHUFFLE( 3, 3, 0, 3));
-
-      // subtraction: (dlnLidlz, d2lnLidlz2, 0, 0) - (0, dlnLidlz * dlnLidlz, 0, 0)
-      dlnLidlz = _mm_sub_ps( dlnLidlz, tmp );
-
-
-      wr_s = _mm_set_ps1( wrptr[i] );
-      dlnLidlz = _mm_mul_ps( dlnLidlz, wr_s );
-
-      dlnLdlz = _mm_add_ps( dlnLdlz, dlnLidlz);
-    }
-
-
-  
-  _mm_store_ps( out, dlnLdlz);
-  *d1 = (double)out[0];
-  *d2 = (double)out[1];
-}
-
-
-#endif
 
 
 
@@ -2884,83 +2372,6 @@ static void sumGAMMAPROT_GAPPED_SAVE(int tipCase, double *sumtable, double *x1, 
 }
 
 
-static void sumGAMMAPROT_FLOAT(int tipCase, float *sumtable, float *x1, float *x2, float *tipVector,
-			       unsigned char *tipX1, unsigned char *tipX2, int n)
-{
-  int i, l, k;
-  float *left, *right, *sum;
-
-  switch(tipCase)
-    {
-    case TIP_TIP:
-      for(i = 0; i < n; i++)
-	{
-	  left  = &(tipVector[20 * tipX1[i]]);
-	  right = &(tipVector[20 * tipX2[i]]);
-
-	  for(l = 0; l < 4; l++)
-	    {
-	      sum = &sumtable[i * 80 + l * 20];
-#ifdef __SIM_SSE3
-	      for(k = 0; k < 20; k+=4)
-		{
-		  __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[k]), _mm_load_ps(&right[k]));
-		  _mm_store_ps(&sum[k], sumv);	
-		}
-#else
-	      for(k = 0; k < 20; k++)
-		sum[k] = left[k] * right[k];
-#endif
-	    }
-	}
-      break;
-    case TIP_INNER:
-      for(i = 0; i < n; i++)
-	{
-	  left = &(tipVector[20 * tipX1[i]]);
-
-	  for(l = 0; l < 4; l++)
-	    {
-	      right = &(x2[80 * i + l * 20]);
-	      sum = &sumtable[i * 80 + l * 20];
-#ifdef __SIM_SSE3
-	      for(k = 0; k < 20; k+=4)
-		{
-		  __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[k]), _mm_load_ps(&right[k]));
-		  _mm_store_ps(&sum[k], sumv);	
-		}
-#else
-	      for(k = 0; k < 20; k++)
-		sum[k] = left[k] * right[k];
-#endif
-	    }
-	}
-      break;
-    case INNER_INNER:
-      for(i = 0; i < n; i++)
-	{
-	  for(l = 0; l < 4; l++)
-	    {
-	      left  = &(x1[80 * i + l * 20]);
-	      right = &(x2[80 * i + l * 20]);
-	      sum   = &(sumtable[i * 80 + l * 20]);
-#ifdef __SIM_SSE3
-	      for(k = 0; k < 20; k+=4)
-		{
-		  __m128 sumv = _mm_mul_ps(_mm_load_ps(&left[k]), _mm_load_ps(&right[k]));
-		  _mm_store_ps(&sum[k], sumv);	
-		}
-#else
-	      for(k = 0; k < 20; k++)
-		sum[k] = left[k] * right[k];
-#endif
-	    }
-	}
-      break;
-    default:
-      assert(0);
-    }
-}
 
 static void sumGammaFlex(int tipCase, double *sumtable, double *x1, double *x2, double *tipVector,
 			 unsigned char *tipX1, unsigned char *tipX2, int n, const int numStates)
@@ -3019,6 +2430,74 @@ static void sumGammaFlex(int tipCase, double *sumtable, double *x1, double *x2, 
       assert(0);
     }
 }
+
+
+static void sumGammaFlex_perSite(int *perSiteAA,
+				 siteAAModels *siteProtModel,
+				 int tipCase, double *sumtable, double *x1, double *x2,
+				 unsigned char *tipX1, unsigned char *tipX2, int n, const int numStates)
+{
+  int i, l, k;
+  double *left, *right, *sum;
+
+  const int gammaStates = numStates * 4;
+
+  switch(tipCase)
+    {
+    case TIP_TIP:
+      for(i = 0; i < n; i++)
+	{
+	  double
+	    *tipVector = siteProtModel[perSiteAA[i]].tipVector;
+
+	  left  = &(tipVector[numStates * tipX1[i]]);
+	  right = &(tipVector[numStates * tipX2[i]]);
+
+	  for(l = 0; l < 4; l++)
+	    {
+	      sum = &sumtable[i * gammaStates + l * numStates];
+	      for(k = 0; k < numStates; k++)
+		sum[k] = left[k] * right[k];
+	    }
+	}
+      break;
+    case TIP_INNER:
+      for(i = 0; i < n; i++)
+	{ 
+	  double
+	    *tipVector = siteProtModel[perSiteAA[i]].tipVector;
+	  
+	  left = &(tipVector[numStates * tipX1[i]]);
+
+	  for(l = 0; l < 4; l++)
+	    {
+	      right = &(x2[gammaStates * i + l * numStates]);
+	      sum = &sumtable[i * gammaStates + l * numStates];
+
+	      for(k = 0; k < numStates; k++)
+		sum[k] = left[k] * right[k];
+	    }
+	}
+      break;
+    case INNER_INNER:
+      for(i = 0; i < n; i++)
+	{
+	  for(l = 0; l < 4; l++)
+	    {
+	      left  = &(x1[gammaStates * i + l * numStates]);
+	      right = &(x2[gammaStates * i + l * numStates]);
+	      sum   = &(sumtable[i * gammaStates + l * numStates]);
+
+	      for(k = 0; k < numStates; k++)
+		sum[k] = left[k] * right[k];
+	    }
+	}
+      break;
+    default:
+      assert(0);
+    }
+}
+
 
 static void sumGAMMASECONDARY(int tipCase, double *sumtable, double *x1, double *x2, double *tipVector,
 			      unsigned char *tipX1, unsigned char *tipX2, int n)
@@ -3327,145 +2806,7 @@ static void coreGTRGAMMAPROT(double *gammaRates, double *EIGN, double *sumtable,
 #endif
 
 
-#ifndef __SIM_SSE3
 
-static void coreGTRGAMMAPROT_FLOAT(double *gammaRates, double *EIGN, float *sumtable, int upper, int *wrptr,
-				   volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, double lz)
-{
-  float  *sum, diagptable[512];
-  int     i, j, l;
-  float  dlnLdlz = 0;
-  float d2lnLdlz2 = 0;
-  double ki, kisqr;
-  float tmp;
-  float inv_Li, dlnLidlz, d2lnLidlz2;
-
-  for(i = 0; i < 4; i++)
-    {
-      ki = gammaRates[i];
-      kisqr = ki * ki;
-
-      for(l = 1; l < 20; l++)
-	{
-	  diagptable[i * 128 + l * 4]     = ((float)EXP(EIGN[l-1] * ki * lz));
-	  diagptable[i * 128 + l * 4 + 1] = ((float)(EIGN[l-1] * ki));
-	  diagptable[i * 128 + l * 4 + 2] = ((float)(EIGN[l-1] * EIGN[l-1] * kisqr));
-	}
-    }
-
-  for (i = 0; i < upper; i++)
-    {
-      sum = &sumtable[i * 80];
-      inv_Li   = 0.0;
-      dlnLidlz = 0.0;
-      d2lnLidlz2 = 0.0;
-
-      for(j = 0; j < 4; j++)
-	{
-	  inv_Li += sum[j * 20];
-
-	  for(l = 1; l < 20; l++)
-	    {
-	      inv_Li     += (tmp = diagptable[j * 128 + l * 4] * sum[j * 20 + l]);
-	      dlnLidlz   +=  tmp * diagptable[j * 128 + l * 4 + 1];
-	      d2lnLidlz2 +=  tmp * diagptable[j * 128 + l * 4 + 2];
-	    }
-	}
-
-      inv_Li = 1.0 / inv_Li;
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-      dlnLdlz   += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wrptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *ext_dlnLdlz   = (double)dlnLdlz;
-  *ext_d2lnLdlz2 = (double)d2lnLdlz2;
-}
-
-#else
-
-static void coreGTRGAMMAPROT_FLOAT(double *gammaRates, double *EIGN, float *sumtable, int upper, int *wrptr,
-				   volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, double lz)
-{
-  float  *sum, 
-    diagptable0[80] __attribute__ ((aligned (16))),
-    diagptable1[80] __attribute__ ((aligned (16))),
-    diagptable2[80] __attribute__ ((aligned (16)));    
-  int     i, j, l;
-  float  dlnLdlz = 0;
-  float d2lnLdlz2 = 0;
-  double ki, kisqr; 
-  float inv_Li, dlnLidlz, d2lnLidlz2;
-
-  for(i = 0; i < 4; i++)
-    {
-      ki = gammaRates[i];
-      kisqr = ki * ki;
-
-      diagptable0[i * 20] = 1.0;
-      diagptable1[i * 20] = 0.0;
-      diagptable2[i * 20] = 0.0;           
-
-      for(l = 1; l < 20; l++)
-	{
-	  diagptable0[i * 20 + l] = ((float)EXP(EIGN[l-1] * ki * lz));
-	  diagptable1[i * 20 + l] = ((float)(EIGN[l-1] * ki));
-	  diagptable2[i * 20 + l] = ((float)(EIGN[l-1] * EIGN[l-1] * kisqr));
-	}
-    }
-
-  for (i = 0; i < upper; i++)
-    {
-      sum = &sumtable[i * 80];
-     
-      __m128 a0 = _mm_setzero_ps();
-      __m128 a1 = _mm_setzero_ps();
-      __m128 a2 = _mm_setzero_ps();
-
-      for(j = 0; j < 4; j++)
-	{
-	 float 	   
-	   *d0 = &diagptable0[j * 20],
-	   *d1 = &diagptable1[j * 20],
-	   *d2 = &diagptable2[j * 20];
-
-	  for(l = 0; l < 20; l+=4)
-	    {
-	      __m128 tmpv = _mm_mul_ps(_mm_load_ps(&d0[l]), _mm_load_ps(&sum[j * 20 + l]));
-	      a0 = _mm_add_ps(a0, tmpv);
-	      a1 = _mm_add_ps(a1, _mm_mul_ps(tmpv, _mm_load_ps(&d1[l])));
-	      a2 = _mm_add_ps(a2, _mm_mul_ps(tmpv, _mm_load_ps(&d2[l])));	     
-	    }
-	}
-
-      a0 = _mm_hadd_ps(a0, a0);
-      a0 = _mm_hadd_ps(a0, a0);
-      a1 = _mm_hadd_ps(a1, a1);
-      a1 = _mm_hadd_ps(a1, a1);
-      a2 = _mm_hadd_ps(a2, a2);
-      a2 = _mm_hadd_ps(a2, a2);
-
-      _mm_store_ss(&inv_Li, a0);
-      _mm_store_ss(&dlnLidlz, a1);
-      _mm_store_ss(&d2lnLidlz2, a2);
-
-      inv_Li = 1.0 / inv_Li;
-
-      dlnLidlz   *= inv_Li;
-      d2lnLidlz2 *= inv_Li;
-
-      dlnLdlz   += wrptr[i] * dlnLidlz;
-      d2lnLdlz2 += wrptr[i] * (d2lnLidlz2 - dlnLidlz * dlnLidlz);
-    }
-
-  *ext_dlnLdlz   = (double)dlnLdlz;
-  *ext_d2lnLdlz2 = (double)d2lnLdlz2;
-}
-
-#endif
 
 static void coreGTRGAMMASECONDARY(double *gammaRates, double *EIGN, double *sumtable, int upper, int *wrptr,
 				  volatile double *ext_dlnLdlz,  volatile double *ext_d2lnLdlz2, double lz)
@@ -4004,49 +3345,6 @@ static void getVects(tree *tr, unsigned char **tipX1, unsigned char **tipX2, dou
 }
 
 
-static void getVects_FLOAT(tree *tr, unsigned char **tipX1, unsigned char **tipX2, float **x1_start, float **x2_start, int *tipCase, int model)
-{
-  int pNumber = tr->td[0].ti[0].pNumber;
-  int qNumber = tr->td[0].ti[0].qNumber;
-
-  *x1_start = (float*)NULL,
-  *x2_start = (float*)NULL;
-  *tipX1 = (unsigned char*)NULL,
-  *tipX2 = (unsigned char*)NULL;
-
-  if(isTip(pNumber, tr->mxtips) || isTip(qNumber, tr->mxtips))
-    {
-      if(!( isTip(pNumber, tr->mxtips) && isTip(qNumber, tr->mxtips)) )
-	{
-	  *tipCase = TIP_INNER;
-	  if(isTip(qNumber, tr->mxtips))
-	    {
-	      *tipX1 = tr->partitionData[model].yVector[qNumber];
-	      *x2_start = tr->partitionData[model].xVector_FLOAT[pNumber - tr->mxtips - 1];
-
-	    }
-	  else
-	    {
-	      *tipX1 = tr->partitionData[model].yVector[pNumber];
-	      *x2_start = tr->partitionData[model].xVector_FLOAT[qNumber - tr->mxtips - 1];
-	    }
-	}
-      else
-	{
-	  *tipCase = TIP_TIP;
-	  *tipX1 = tr->partitionData[model].yVector[pNumber];
-	  *tipX2 = tr->partitionData[model].yVector[qNumber];
-	}
-    }
-  else
-    {
-      *tipCase = INNER_INNER;
-
-      *x1_start = tr->partitionData[model].xVector_FLOAT[pNumber - tr->mxtips - 1];
-      *x2_start = tr->partitionData[model].xVector_FLOAT[qNumber - tr->mxtips - 1];
-    }
-
-}
 
 
 void makenewzIterative(tree *tr)
@@ -4059,9 +3357,7 @@ void makenewzIterative(tree *tr)
     *x1_start = (double*)NULL,
     *x2_start = (double*)NULL;
 
-  float
-    *x1_start_FLOAT = (float*)NULL,
-    *x2_start_FLOAT = (float*)NULL;
+ 
 
   unsigned char
     *tipX1,
@@ -4089,10 +3385,9 @@ void makenewzIterative(tree *tr)
 	    width = tr->partitionData[model].width,
 	    states = tr->partitionData[model].states;
 
-	  if(!tr->useFloat)
-	    getVects(tr, &tipX1, &tipX2, &x1_start, &x2_start, &tipCase, model, &x1_gapColumn, &x2_gapColumn, &x1_gap, &x2_gap);
-	  else
-	    getVects_FLOAT(tr, &tipX1, &tipX2, &x1_start_FLOAT, &x2_start_FLOAT, &tipCase, model);
+	 
+	  getVects(tr, &tipX1, &tipX2, &x1_start, &x2_start, &tipCase, model, &x1_gapColumn, &x2_gapColumn, &x1_gap, &x2_gap);
+	 
 
 	  switch(tr->partitionData[model].dataType)
 	    {
@@ -4115,20 +3410,12 @@ void makenewzIterative(tree *tr)
 	    case DNA_DATA:
 	      switch(tr->rateHetModel)
 		{
-		case CAT:
-		  if(tr->useFloat)
-		    sumCAT_FLOAT(tipCase, tr->partitionData[model].sumBuffer_FLOAT, x1_start_FLOAT, x2_start_FLOAT, tr->partitionData[model].tipVector_FLOAT,
-				 tipX1, tipX2, width);
-		  else
+		case CAT:		 
 		    sumCAT(tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector, tipX1, tipX2,
 			   width);
 		  break;
 		case GAMMA:
-		case GAMMA_I:
-		  if(tr->useFloat)
-		     sumGAMMA_FLOAT(tipCase, tr->partitionData[model].sumBuffer_FLOAT, x1_start_FLOAT, x2_start_FLOAT, tr->partitionData[model].tipVector_FLOAT,
-				    tipX1, tipX2, width);
-		    else 
+		case GAMMA_I:		  
 		      {
 			if(tr->saveMemory)
 			  sumGAMMA_GAPPED_SAVE(tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector, tipX1, tipX2,
@@ -4151,19 +3438,21 @@ void makenewzIterative(tree *tr)
 	    case AA_DATA:
 	      switch(tr->rateHetModel)
 		{
-		case CAT:
-		  if(tr->useFloat)
-		    sumGTRCATPROT_FLOAT(tipCase, tr->partitionData[model].sumBuffer_FLOAT, x1_start_FLOAT, x2_start_FLOAT, tr->partitionData[model].tipVector_FLOAT,
-					tipX1, tipX2, width);
-		  else
+		case CAT:		  
 		    sumGTRCATPROT(tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start, tr->partitionData[model].tipVector,
 				  tipX1, tipX2, width);
 		  break;
 		case GAMMA:
 		case GAMMA_I:
-		  if(tr->useFloat)
-		    sumGAMMAPROT_FLOAT(tipCase,  tr->partitionData[model].sumBuffer_FLOAT, x1_start_FLOAT, x2_start_FLOAT, tr->partitionData[model].tipVector_FLOAT,
-				       tipX1, tipX2, width);
+		  if(tr->estimatePerSiteAA)
+		    {
+		    
+		      sumGammaFlex_perSite(tr->partitionData[model].perSiteAAModel,
+					   tr->siteProtModel,
+					   tipCase, tr->partitionData[model].sumBuffer, x1_start, x2_start,
+					   tipX1, tipX2, width, 20);
+		      
+		    }
 		  else
 		    {
 		      if(tr->saveMemory)
@@ -4277,16 +3566,13 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	  
 	  double 
 	    *sumBuffer       = (double*)NULL;
-	  float
-	    *sumBuffer_FLOAT = (float*)NULL;
+	 
 
 	  volatile double
 	    dlnLdlz   = 0.0,
 	    d2lnLdlz2 = 0.0;
 	  
-	  if(tr->useFloat)
-	    sumBuffer_FLOAT = tr->partitionData[model].sumBuffer_FLOAT;
-	  else
+
 	    sumBuffer = tr->partitionData[model].sumBuffer;
 
 
@@ -4309,9 +3595,9 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCAT_BINARY(width, tr->NumberOfCategories, sumBuffer,
+		  coreGTRCAT_BINARY(width, tr->partitionData[model].numberOfCategories, sumBuffer,
 				    &dlnLdlz, &d2lnLdlz2, tr->partitionData[model].wr, tr->partitionData[model].wr2,
-				    tr->cdta->patrat, tr->partitionData[model].EIGN,  tr->partitionData[model].rateCategory, lz);
+				    tr->partitionData[model].perSiteRates, tr->partitionData[model].EIGN,  tr->partitionData[model].rateCategory, lz);
 		  break;
 		case GAMMA:
 		  coreGTRGAMMA_BINARY(width, sumBuffer,
@@ -4330,32 +3616,14 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 		}
 	      break;
 	    case DNA_DATA:
-	      if(tr->useFloat)
+	      
 		{
 		  switch(tr->rateHetModel)
 		    {
 		    case CAT:
-		      coreGTRCAT_FLOAT(width, tr->NumberOfCategories, sumBuffer_FLOAT,
-				       &dlnLdlz, &d2lnLdlz2, tr->partitionData[model].wr_FLOAT, tr->partitionData[model].wr2_FLOAT,
-				       tr->cdta->patrat, tr->partitionData[model].EIGN,  tr->partitionData[model].rateCategory, lz);
-		      break;
-		    case GAMMA:
-		      coreGTRGAMMA_FLOAT(width, sumBuffer_FLOAT,
-					 &dlnLdlz, &d2lnLdlz2, tr->partitionData[model].EIGN, tr->partitionData[model].gammaRates, lz,
-					 tr->partitionData[model].wgt);
-		      break;
-		    default:
-		      assert(0);
-		    }
-		}
-	      else
-		{
-		  switch(tr->rateHetModel)
-		    {
-		    case CAT:
-		      coreGTRCAT(width, tr->NumberOfCategories, sumBuffer,
+		      coreGTRCAT(width, tr->partitionData[model].numberOfCategories, sumBuffer,
 				 &dlnLdlz, &d2lnLdlz2, tr->partitionData[model].wr, tr->partitionData[model].wr2,
-				 tr->cdta->patrat, tr->partitionData[model].EIGN,  tr->partitionData[model].rateCategory, lz);
+				 tr->partitionData[model].perSiteRates, tr->partitionData[model].EIGN,  tr->partitionData[model].rateCategory, lz);
 		      break;
 		    case GAMMA:		     
 		      coreGTRGAMMA(width, sumBuffer,
@@ -4375,48 +3643,26 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 		}
 	      break;
 	    case AA_DATA:
-	      if(tr->useFloat)
+	     
 		{
 		  switch(tr->rateHetModel)
 		    {
 		    case CAT:
-		      coreGTRCATPROT_FLOAT(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
-					   tr->partitionData[model].rateCategory, width,
-					   tr->partitionData[model].wr_FLOAT, tr->partitionData[model].wr2_FLOAT,
-					   &dlnLdlz, &d2lnLdlz2,
-					   sumBuffer_FLOAT);
-			break;
-
-		    case GAMMA:
-		      coreGTRGAMMAPROT_FLOAT(tr->partitionData[model].gammaRates, tr->partitionData[model].EIGN,
-					     sumBuffer_FLOAT, width, tr->partitionData[model].wgt,
-					     &dlnLdlz, &d2lnLdlz2, lz);
-		      break;
-		      /*case GAMMA_I:
-			coreGTRGAMMAPROTINVAR(tr->partitionData[model].gammaRates, tr->partitionData[model].EIGN,
-			sumBuffer, width, tr->partitionData[model].wgt,
-			&dlnLdlz, &d2lnLdlz2, lz, tr->partitionData[model].frequencies,
-			tr->partitionData[model].propInvariant, tr->partitionData[model].invariant);
-			break;*/
-		    default:
-		      assert(0);
-		    }
-		}
-	      else
-		{
-		  switch(tr->rateHetModel)
-		    {
-		    case CAT:
-		      coreGTRCATPROT(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
+		      coreGTRCATPROT(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  tr->partitionData[model].perSiteRates,
 				     tr->partitionData[model].rateCategory, width,
 				     tr->partitionData[model].wr, tr->partitionData[model].wr2,
 				     &dlnLdlz, &d2lnLdlz2,
 				     sumBuffer);
 		      break;
 		    case GAMMA:
-		      coreGTRGAMMAPROT(tr->partitionData[model].gammaRates, tr->partitionData[model].EIGN,
-				       sumBuffer, width, tr->partitionData[model].wgt,
-				       &dlnLdlz, &d2lnLdlz2, lz);
+		      if(tr->estimatePerSiteAA)			
+			coreGammaFlex_perSite(tr->siteProtModel, tr->partitionData[model].perSiteAAModel, 
+					      tr->partitionData[model].gammaRates, sumBuffer, width, tr->partitionData[model].wgt,
+					      &dlnLdlz, &d2lnLdlz2, lz, 20);
+		      else
+			coreGTRGAMMAPROT(tr->partitionData[model].gammaRates, tr->partitionData[model].EIGN,
+					 sumBuffer, width, tr->partitionData[model].wgt,
+					 &dlnLdlz, &d2lnLdlz2, lz);
 		      break;
 		    case GAMMA_I:
 		      coreGTRGAMMAPROTINVAR(tr->partitionData[model].gammaRates, tr->partitionData[model].EIGN,
@@ -4433,7 +3679,7 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
+		  coreGTRCATSECONDARY(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  tr->partitionData[model].perSiteRates,
 				      tr->partitionData[model].rateCategory, width,
 				      tr->partitionData[model].wr, tr->partitionData[model].wr2,
 				      &dlnLdlz, &d2lnLdlz2,
@@ -4458,7 +3704,7 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY_6(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
+		  coreGTRCATSECONDARY_6(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  tr->partitionData[model].perSiteRates,
 					tr->partitionData[model].rateCategory, width,
 					tr->partitionData[model].wr, tr->partitionData[model].wr2,
 					&dlnLdlz, &d2lnLdlz2,
@@ -4483,7 +3729,7 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY_7(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
+		  coreGTRCATSECONDARY_7(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  tr->partitionData[model].perSiteRates,
 					tr->partitionData[model].rateCategory, width,
 					tr->partitionData[model].wr, tr->partitionData[model].wr2,
 					&dlnLdlz, &d2lnLdlz2,
@@ -4508,7 +3754,7 @@ void execCore(tree *tr, volatile double *_dlnLdlz, volatile double *_d2lnLdlz2)
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreCatFlex(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  &(tr->cdta->patrat[0]),
+		  coreCatFlex(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  tr->partitionData[model].perSiteRates,
 			      tr->partitionData[model].rateCategory, width,
 			      tr->partitionData[model].wr, tr->partitionData[model].wr2,
 			      &dlnLdlz, &d2lnLdlz2,
@@ -4893,7 +4139,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	{	  
 	  double 
 	    *sumBuffer       = &tr->temporarySumBuffer[offsetCounter],
-	    *patrat          = tr->contiguousPATRAT,
+	    *patrat          = tr->partitionData[model].perSiteRates,
 	    *wr              = &tr->contiguousWR[columnCounter],
 	    *wr2             = &tr->contiguousWR2[columnCounter];
 	 
@@ -4926,7 +4172,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCAT_BINARY(width, tr->NumberOfCategories, sumBuffer,
+		  coreGTRCAT_BINARY(width, tr->partitionData[model].numberOfCategories, sumBuffer,
 				    &dlnLdlz, &d2lnLdlz2, wr, wr2,
 				    patrat, tr->partitionData[model].EIGN,  rateCategory, lz);
 		  break;
@@ -4950,7 +4196,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCAT(width, tr->NumberOfCategories, sumBuffer,
+		  coreGTRCAT(width, tr->partitionData[model].numberOfCategories, sumBuffer,
 			     &dlnLdlz, &d2lnLdlz2, wr, wr2,
 			     patrat, tr->partitionData[model].EIGN,  rateCategory, lz);
 		  break;
@@ -4974,7 +4220,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATPROT(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  patrat,
+		  coreGTRCATPROT(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  patrat,
 				 rateCategory, width,
 				 wr, wr2,
 				 &dlnLdlz, &d2lnLdlz2,
@@ -4999,7 +4245,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  patrat,
+		  coreGTRCATSECONDARY(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  patrat,
 				      rateCategory, width,
 				      wr, wr2,
 				      &dlnLdlz, &d2lnLdlz2,
@@ -5024,7 +4270,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY_6(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories, patrat,
+		  coreGTRCATSECONDARY_6(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories, patrat,
 					rateCategory, width,
 					wr, wr2,
 					&dlnLdlz, &d2lnLdlz2,
@@ -5049,7 +4295,7 @@ static void coreClassify(tree *tr, volatile double *_dlnLdlz, volatile double *_
 	      switch(tr->rateHetModel)
 		{
 		case CAT:
-		  coreGTRCATSECONDARY_7(tr->partitionData[model].EIGN, lz, tr->NumberOfCategories,  patrat,
+		  coreGTRCATSECONDARY_7(tr->partitionData[model].EIGN, lz, tr->partitionData[model].numberOfCategories,  patrat,
 					rateCategory, width,
 					wr, wr2,
 					&dlnLdlz, &d2lnLdlz2,

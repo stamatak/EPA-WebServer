@@ -29,10 +29,7 @@
  */
 
 
-#ifdef _IPTOL
-double lastCheckpointTime;
-double checkPointInterval = 3600.0;
-#endif
+
 
 
 
@@ -46,7 +43,8 @@ FILE   *INFILE;
 
 int Thorough = 0;
 
-
+int globalArgc;
+char **globalArgv;
 
 char run_id[128] = "", 
   workdir[1024] = "", 
@@ -75,7 +73,22 @@ char run_id[128] = "",
   binaryModelParamsOutputFileName[1024] = "",
   binaryModelParamsInputFileName[1024] = "";
 
-char *protModels[12] = {"DAYHOFF", "DCMUT", "JTT", "MTREV", "WAG", "RTREV", "CPREV", "VT", "BLOSUM62", "MTMAM", "LG", "GTR"};
+
+
+
+char *protModels[NUM_PROT_MODELS] = {"DAYHOFF", "DCMUT", "JTT", "MTREV", "WAG", "RTREV", "CPREV", "VT", 
+				     "BLOSUM62", "MTMAM", "LG", "MTART", "MTZOA", "PMB", "HIVB", "HIVW", 
+				     "JTTDCMUT", "FLU", "PROT_FILE", "GTR_UNLINKED", "GTR"};
+
+const char binaryStateNames[2]   = {'0', '1'};
+const char dnaStateNames[4]      = {'A', 'C', 'G', 'T'};
+const char protStateNames[20]    = {'A','R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 
+				    'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 
+				    'Y', 'V'};
+const char genericStateNames[32] = {'0', '1', '2', '3', '4', '5', '6', '7', 
+				    '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
+				    'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
+				    'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'};
 
 const char inverseMeaningBINARY[4] = {'_', '0', '1', '-'};
 const char inverseMeaningDNA[16]   = {'_', 'A', 'C', 'M', 'G', 'R', 'S', 'V', 'T', 'W', 'Y', 'H', 'K', 'D', 'B', '-'};

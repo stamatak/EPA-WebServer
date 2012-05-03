@@ -2179,7 +2179,7 @@ static void checkSequences(tree *tr, rawdata *rdta, analdef *adef)
       if(processID == 0)
 	printBothOpen("ERROR: Found %d sequences that consist entirely of undetermined values, exiting...\n", countOnlyGaps);
 
-      errorExit(-1);
+      //  errorExit(-1);
     }
 
   for(i = 0; i <= rdta->sites; i++)

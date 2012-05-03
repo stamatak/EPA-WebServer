@@ -57,7 +57,7 @@ extern char workdir[1024];
 extern char run_id[128];
 extern char lengthFileName[1024];
 extern char lengthFileNameModel[1024];
-
+extern char *protModels[NUM_PROT_MODELS];
 
 
 #ifdef _USE_PTHREADS
@@ -173,8 +173,11 @@ static linkageList* initLinkageListGTR(tree *tr)
     *links = (int*)malloc(sizeof(int) * tr->NumberOfModels),
     firstAA = tr->NumberOfModels + 2,
     countGTR = 0,
+    countUnlinkedGTR = 0,
     countOtherModel = 0;
-  linkageList* ll;
+  
+  linkageList* 
+    ll;
 
   for(i = 0; i < tr->NumberOfModels; i++)
     {     
@@ -187,10 +190,20 @@ static linkageList* initLinkageListGTR(tree *tr)
 	      countGTR++;
 	    }
 	  else
-	    countOtherModel++;
+	    {
+	      if(tr->partitionData[i].protModels == GTR_UNLINKED)
+		countUnlinkedGTR++;
+	      else
+		countOtherModel++;
+	    }
 	}
     }
   
+  /* 
+     TODO need to think what we actually want here ! 
+     Shall we mix everything: linked, unlinked WAG etc?
+  */
+
   assert((countGTR > 0 && countOtherModel == 0) || (countGTR == 0 && countOtherModel > 0) ||  (countGTR == 0 && countOtherModel == 0));
 
   if(countGTR == 0)
@@ -250,7 +263,7 @@ static void freeLinkageList( linkageList* ll)
 
 
 
-static void evaluateChange(tree *tr, int rateNumber, double *value, double *result, boolean* converged, analdef *adef, int whichFunction, int numberOfModels, linkageList *ll)
+static void evaluateChange(tree *tr, int rateNumber, double *value, double *result, boolean* converged, int whichFunction, int numberOfModels, linkageList *ll)
 { 
   int i, k, pos;
 
@@ -408,7 +421,7 @@ static void evaluateChange(tree *tr, int rateNumber, double *value, double *resu
 		    {
 		      int index = ll->ld[i].partitionList[k];		  	      
 		      setRateModel(tr, index, value[pos], rateNumber);  
-		      initReversibleGTR(tr, adef, index);		 
+		      initReversibleGTR(tr, index);		 
 		    }
 		}
 	      pos++;
@@ -489,7 +502,7 @@ static void evaluateChange(tree *tr, int rateNumber, double *value, double *resu
 
 
 static void brentGeneric(double *ax, double *bx, double *cx, double *fb, double tol, double *xmin, double *result, int numberOfModels, 
-			 int whichFunction, int rateNumber, analdef *adef, tree *tr, linkageList *ll, double lim_inf, double lim_sup)
+			 int whichFunction, int rateNumber, tree *tr, linkageList *ll, double lim_inf, double lim_sup)
 {
   int iter, i;
   double 
@@ -629,7 +642,7 @@ static void brentGeneric(double *ax, double *bx, double *cx, double *fb, double 
 	    }
 	}
                  
-      evaluateChange(tr, rateNumber, u, fu, converged, adef, whichFunction, numberOfModels, ll);
+      evaluateChange(tr, rateNumber, u, fu, converged, whichFunction, numberOfModels, ll);
 
       for(i = 0; i < numberOfModels; i++)
 	{
@@ -708,7 +721,7 @@ static void brentGeneric(double *ax, double *bx, double *cx, double *fb, double 
 
 static int brakGeneric(double *param, double *ax, double *bx, double *cx, double *fa, double *fb, 
 		       double *fc, double lim_inf, double lim_sup, 
-		       int numberOfModels, int rateNumber, analdef *adef, int whichFunction, tree *tr, linkageList *ll)
+		       int numberOfModels, int rateNumber, int whichFunction, tree *tr, linkageList *ll)
 {
   double 
     *ulim = (double *)malloc(sizeof(double) * numberOfModels),
@@ -749,7 +762,7 @@ static int brakGeneric(double *param, double *ax, double *bx, double *cx, double
     }
    
   
-  evaluateChange(tr, rateNumber, param, fa, converged, adef, whichFunction, numberOfModels, ll);
+  evaluateChange(tr, rateNumber, param, fa, converged, whichFunction, numberOfModels, ll);
 
 
   for(i = 0; i < numberOfModels; i++)
@@ -763,7 +776,7 @@ static int brakGeneric(double *param, double *ax, double *bx, double *cx, double
       assert(param[i] >= lim_inf && param[i] <= lim_sup);
     }
   
-  evaluateChange(tr, rateNumber, param, fb, converged, adef, whichFunction, numberOfModels, ll);
+  evaluateChange(tr, rateNumber, param, fb, converged, whichFunction, numberOfModels, ll);
 
   for(i = 0; i < numberOfModels; i++)  
     {
@@ -786,7 +799,7 @@ static int brakGeneric(double *param, double *ax, double *bx, double *cx, double
     }
   
  
-  evaluateChange(tr, rateNumber, param, fc, converged, adef, whichFunction, numberOfModels,  ll);
+  evaluateChange(tr, rateNumber, param, fc, converged, whichFunction, numberOfModels,  ll);
 
    while(1) 
      {       
@@ -930,7 +943,7 @@ static int brakGeneric(double *param, double *ax, double *bx, double *cx, double
 	     }
 	 }
              
-       evaluateChange(tr, rateNumber, param, temp, converged, adef, whichFunction, numberOfModels, ll);
+       evaluateChange(tr, rateNumber, param, temp, converged, whichFunction, numberOfModels, ll);
 
        for(i = 0; i < numberOfModels; i++)
 	 {
@@ -1077,8 +1090,8 @@ static void optInvar(tree *tr, double modelEpsilon, linkageList *ll)
 	}
     }	       
 
-  brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, -1, (analdef*)NULL, INVAR_F, tr, ll);
-  brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, INVAR_F, -1, (analdef*)NULL, tr, ll, lim_inf, lim_sup);
+  brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, -1, INVAR_F, tr, ll);
+  brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, INVAR_F, -1, tr, ll, lim_inf, lim_sup);
 
   for(i = 0; i < numberOfModels; i++)
     endInvar[i] = result[i];
@@ -1183,8 +1196,8 @@ static void optAlpha(tree *tr, double modelEpsilon, linkageList *ll)
 	}
     }					  
 
-  brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, -1, (analdef*)NULL, ALPHA_F, tr, ll);       
-  brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, ALPHA_F, -1, (analdef*)NULL, tr, ll, lim_inf, lim_sup);
+  brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, -1, ALPHA_F, tr, ll);       
+  brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, ALPHA_F, -1, tr, ll, lim_inf, lim_sup);
 
   for(i = 0; i < numberOfModels; i++)
     endAlpha[i] = result[i];
@@ -1231,7 +1244,7 @@ static void optAlpha(tree *tr, double modelEpsilon, linkageList *ll)
 
 
 
-static void optRates(tree *tr, analdef *adef, double modelEpsilon, linkageList *ll, int numberOfModels, int states)
+static void optRates(tree *tr, double modelEpsilon, linkageList *ll, int numberOfModels, int states)
 {
   int 
     i, 
@@ -1312,7 +1325,7 @@ static void optRates(tree *tr, analdef *adef, double modelEpsilon, linkageList *
 
       assert(pos == numberOfModels);
 
-      brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, i, adef, RATE_F, tr, ll);
+      brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, i, RATE_F, tr, ll);
       
       for(k = 0; k < numberOfModels; k++)
 	{
@@ -1321,7 +1334,7 @@ static void optRates(tree *tr, analdef *adef, double modelEpsilon, linkageList *
 	  assert(_c[k] >= lim_inf && _c[k] <= lim_sup);	    
 	}      
 
-      brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, RATE_F, i, adef, tr,  ll, lim_inf, lim_sup);
+      brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, RATE_F, i, tr,  ll, lim_inf, lim_sup);
 	
       for(k = 0; k < numberOfModels; k++)
 	endLH[k] = result[k];
@@ -1339,7 +1352,7 @@ static void optRates(tree *tr, analdef *adef, double modelEpsilon, linkageList *
 		    {
 		      int index = ll->ld[k].partitionList[j];
 		      tr->partitionData[index].substRates[i] = startRates[pos * numberOfRates + i];	             	  
-		      initReversibleGTR(tr, adef, index);
+		      initReversibleGTR(tr, index);
 		    }
 #ifdef _USE_PTHREADS		  
 		  revertModel++;
@@ -1373,7 +1386,9 @@ static void optRates(tree *tr, analdef *adef, double modelEpsilon, linkageList *
 
 static boolean AAisGTR(tree *tr)
 {
-  int i, count = 0;
+  int 
+    i, 
+    count = 0;
 
   for(i = 0; i < tr->NumberOfModels; i++)   
     {
@@ -1391,12 +1406,35 @@ static boolean AAisGTR(tree *tr)
   return TRUE;
 }
 
-static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkageList *ll)
+static boolean AAisUnlinkedGTR(tree *tr)
+{
+  int 
+    i, 
+    count = 0;
+
+  for(i = 0; i < tr->NumberOfModels; i++)   
+    {
+      if(tr->partitionData[i].dataType == AA_DATA)
+	{
+	  count++;
+	  if(tr->partitionData[i].protModels != GTR_UNLINKED)
+	    return FALSE;
+	}
+    }
+
+  if(count == 0)
+    return FALSE;
+
+  return TRUE;
+}
+
+static void optRatesGeneric(tree *tr, double modelEpsilon, linkageList *ll)
 {
   int 
     i,
     dnaPartitions = 0,
-    aaPartitions  = 0,
+    aaPartitionsLinked  = 0,
+    aaPartitionsUnlinked = 0,
     secondaryPartitions = 0,
     secondaryModel = -1,
     states = -1;
@@ -1430,7 +1468,7 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
     }   
 
   if(dnaPartitions > 0)
-    optRates(tr, adef, modelEpsilon, ll, dnaPartitions, states);
+    optRates(tr, modelEpsilon, ll, dnaPartitions, states);
   
 
   /* then SECONDARY */
@@ -1479,13 +1517,13 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
        switch(secondaryModel)
 	 {
 	 case SECONDARY_DATA:
-	   optRates(tr, adef, modelEpsilon, ll, secondaryPartitions, states);
+	   optRates(tr, modelEpsilon, ll, secondaryPartitions, states);
 	   break;
 	 case SECONDARY_DATA_6:
-	   optRates(tr, adef, modelEpsilon, ll, secondaryPartitions, states);
+	   optRates(tr, modelEpsilon, ll, secondaryPartitions, states);
 	   break;
 	 case SECONDARY_DATA_7:
-	   optRates(tr, adef, modelEpsilon, ll, secondaryPartitions, states);
+	   optRates(tr, modelEpsilon, ll, secondaryPartitions, states);
 	   break; 
 	 default:
 	   assert(0);
@@ -1503,7 +1541,7 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
 	    case AA_DATA:
 	      states = tr->partitionData[ll->ld[i].partitionList[0]].states;
 	      ll->ld[i].valid = TRUE;
-	      aaPartitions++;
+	      aaPartitionsLinked++;
 	      break;
 	    case DNA_DATA:	    
 	    case BINARY_DATA:
@@ -1517,11 +1555,40 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
 	    }	 
 	}
 
-      assert(aaPartitions == 1);     
+      assert(aaPartitionsLinked == 1);     
       
-      optRates(tr, adef, modelEpsilon, ll, aaPartitions, states);
+      optRates(tr, modelEpsilon, ll, aaPartitionsLinked, states);
     }
   
+   if(AAisUnlinkedGTR(tr))
+    {
+      aaPartitionsUnlinked = 0;
+
+      for(i = 0; i < ll->entries; i++)
+	{
+	  switch(tr->partitionData[ll->ld[i].partitionList[0]].dataType)
+	    {
+	    case AA_DATA:
+	      states = tr->partitionData[ll->ld[i].partitionList[0]].states;
+	      ll->ld[i].valid = TRUE;
+	      aaPartitionsUnlinked++;
+	      break;
+	    case DNA_DATA:	    
+	    case BINARY_DATA:
+	    case SECONDARY_DATA:	
+	    case SECONDARY_DATA_6:
+	    case SECONDARY_DATA_7:
+	      ll->ld[i].valid = FALSE;
+	      break;
+	    default:
+	      assert(0);
+	    }	 
+	}
+
+      assert(aaPartitionsUnlinked >= 1);     
+      
+      optRates(tr, modelEpsilon, ll, aaPartitionsUnlinked, states);
+    }
   /* then multi-state */
 
   /* 
@@ -1548,7 +1615,7 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
 		  if(k != i)
 		    ll->ld[k].valid = FALSE;
 		
-		optRates(tr, adef, modelEpsilon, ll, 1, states);
+		optRates(tr, modelEpsilon, ll, 1, states);
 	      }
 	      break;
 	    case AA_DATA:	    
@@ -1578,6 +1645,8 @@ static void optRatesGeneric(tree *tr, analdef *adef, double modelEpsilon, linkag
 
 
 
+
+
 static int catCompare(const void *p1, const void *p2)
 {
  rateCategorize *rc1 = (rateCategorize *)p1;
@@ -1594,16 +1663,27 @@ static int catCompare(const void *p1, const void *p2)
 }
 
 
-static void categorize(tree *tr, rateCategorize *rc)
-{
-  int i, k, found;
-  double temp, diff, min;
 
-  for (i = 0; i < tr->cdta->endsite; i++) 
+static void categorizePartition(tree *tr, rateCategorize *rc, int model, int lower, int upper)
+{
+  int
+    zeroCounter,
+    i, 
+    k;
+  
+  double 
+    diff, 
+    min;
+
+  for (i = lower, zeroCounter = 0; i < upper; i++, zeroCounter++) 
       {
-	temp = tr->cdta->patrat[i];
-	found = 0;
-	for(k = 0; k < tr->NumberOfCategories; k++)
+	double
+	  temp = tr->cdta->patrat[i];
+
+	int
+	  found = 0;
+	
+	for(k = 0; k < tr->partitionData[model].numberOfCategories; k++)
 	  {
 	    if(temp == rc[k].rate || (fabs(temp - rc[k].rate) < 0.001))
 	      {
@@ -1612,27 +1692,29 @@ static void categorize(tree *tr, rateCategorize *rc)
 		break;
 	      }
 	  }
+	
 	if(!found)
 	  {
 	    min = fabs(temp - rc[0].rate);
 	    tr->cdta->rateCategory[i] = 0;
 
-	    for(k = 1; k < tr->NumberOfCategories; k++)
-	    {
-	      diff = fabs(temp - rc[k].rate);
-	      if(diff < min)
-		{
-		  min = diff;
-		  tr->cdta->rateCategory[i] = k;
-		}
-	    }
+	    for(k = 1; k < tr->partitionData[model].numberOfCategories; k++)
+	      {
+		diff = fabs(temp - rc[k].rate);
+
+		if(diff < min)
+		  {
+		    min = diff;
+		    tr->cdta->rateCategory[i] = k;
+		  }
+	      }
 	  }
       }
 
-  for(k = 0; k < tr->NumberOfCategories; k++)
-    tr->cdta->patrat[k] = rc[k].rate; 
-
+  for(k = 0; k < tr->partitionData[model].numberOfCategories; k++)
+    tr->partitionData[model].perSiteRates[k] = rc[k].rate; 
 }
+
 
 #ifdef _USE_PTHREADS
 
@@ -1800,31 +1882,252 @@ static void optRateCatModel(tree *tr, int model, double lower_spacing, double up
 
 #endif
 
+
+
+/* 
+   set scaleRates to FALSE everywhere such that 
+   per-site rates are not scaled to obtain an overall mean rate 
+   of 1.0
+*/
+
+void updatePerSiteRates(tree *tr, boolean scaleRates)
+{
+  int 
+    i,
+    model;
+
+  if(tr->multiBranch)
+    {            
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{
+	  int 	       
+	    lower = tr->partitionData[model].lower,
+	    upper = tr->partitionData[model].upper;
+	  
+	  if(scaleRates)
+	    {
+	      double 
+		scaler = 0.0,       
+		accRat = 0.0; 
+
+	      int 
+		accWgt     = 0;
+	      
+	      for(i = lower; i < upper; i++)
+		{
+		  int 
+		    w = tr->cdta->aliaswgt[i];
+		  
+		  double
+		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		  
+		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);
+		  
+		  accWgt += w;
+		  
+		  accRat += (w * rate);
+		}	   
+	  
+	      accRat /= ((double)accWgt);
+	  
+	      scaler = 1.0 / ((double)accRat);
+	  	  
+	      for(i = 0; i < tr->partitionData[model].numberOfCategories; i++)
+		tr->partitionData[model].perSiteRates[i] *= scaler;	    
+
+	      accRat = 0.0;	 
+	      
+	      for(i = lower; i < upper; i++)
+		{
+		  int 
+		    w = tr->cdta->aliaswgt[i];
+		  
+		  double
+		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		  
+		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);	      
+		  
+		  accRat += (w * rate);
+		}	         
+
+	      accRat /= ((double)accWgt);	  
+
+	      assert(ABS(1.0 - accRat) < 1.0E-5);
+	    }                
+
+	  for(i = lower; i < upper; i++)
+	    {
+	      double
+		w = ((double)tr->cdta->aliaswgt[i]);	      
+
+	       double
+		 wtemp,
+		 temp = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+
+	       wtemp = temp * w;
+
+	       tr->wr[i]  = wtemp;
+	       tr->wr2[i] = temp * wtemp;
+	    }	            	  
+	  
+#ifndef _USE_PTHREADS
+	  {
+	    int 
+	      localCount = 0;
+	    
+	    for(i = lower, localCount = 0; i < upper; i++, localCount++)
+	      {	    	      
+		tr->partitionData[model].wr[localCount]  = tr->wr[i];
+		tr->partitionData[model].wr2[localCount] = tr->wr2[i];
+	      }
+	  }
+#endif
+	}
+    }
+  else
+    {
+      int
+	accWgt = 0;
+
+      double 
+	scaler = 0.0,       
+	accRat = 0.0; 
+
+      if(scaleRates)
+	{
+	  for(model = 0, accRat = 0.0, accWgt = 0; model < tr->NumberOfModels; model++)
+	    {
+	      int 
+		localCount = 0,
+		lower = tr->partitionData[model].lower,
+		upper = tr->partitionData[model].upper;
+	      
+	      for(i = lower, localCount = 0; i < upper; i++, localCount++)
+		{
+		  int 
+		    w = tr->cdta->aliaswgt[i];
+		  
+		  double
+		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		  
+		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);
+		  
+		  accWgt += w;
+		  
+		  accRat += (w * rate);
+		}
+	    }
+	  
+	  accRat /= ((double)accWgt);
+	  
+	  scaler = 1.0 / ((double)accRat);
+	  
+	  for(model = 0; model < tr->NumberOfModels; model++)
+	    {
+	      for(i = 0; i < tr->partitionData[model].numberOfCategories; i++)
+		tr->partitionData[model].perSiteRates[i] *= scaler;
+	    }
+
+	  for(model = 0, accRat = 0.0; model < tr->NumberOfModels; model++)
+	    {
+	      int 
+		localCount = 0,
+		lower = tr->partitionData[model].lower,
+		upper = tr->partitionData[model].upper;
+	      
+	      for(i = lower, localCount = 0; i < upper; i++, localCount++)
+		{
+		  int 
+		    w = tr->cdta->aliaswgt[i];
+		  
+		  double
+		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		  
+		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);	      
+		  
+		  accRat += (w * rate);
+		}
+	    }           
+
+	  accRat /= ((double)accWgt);	  
+
+	  assert(ABS(1.0 - accRat) < 1.0E-5);
+	}
+         
+       for(model = 0; model < tr->NumberOfModels; model++)
+	{
+	  int 
+	    localCount = 0,
+	    lower = tr->partitionData[model].lower,
+	    upper = tr->partitionData[model].upper;
+
+	  for(i = lower, localCount = 0; i < upper; i++, localCount++)
+	    {
+	      double
+		w = ((double)tr->cdta->aliaswgt[i]);	      
+
+	       double
+		 wtemp,
+		 temp = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+
+	       wtemp = temp * w;
+
+	       tr->wr[i]  = wtemp;
+	       tr->wr2[i] = temp * wtemp;
+	    }
+	}         
+#ifndef _USE_PTHREADS
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{   	  	  	 
+	  int 
+	    localCount,
+	    lower = tr->partitionData[model].lower,
+	    upper = tr->partitionData[model].upper;	  
+	  
+	  for(i = lower, localCount = 0; i < upper; i++, localCount++)
+	    {	    	      
+	      tr->partitionData[model].wr[localCount]  = tr->wr[i];
+	      tr->partitionData[model].wr2[localCount] = tr->wr2[i];
+	    }
+	}
+#endif
+    }
+  
+      
+#ifdef _USE_PTHREADS
+      masterBarrier(THREAD_COPY_RATE_CATS, tr);
+#endif               
+}
+
 static void optimizeRateCategories(tree *tr, int _maxCategories)
 {
   assert(_maxCategories > 0);
 
   if(_maxCategories > 1)
     {
-      int i, k;
-      double  temp, wtemp;   
-      double lower_spacing, upper_spacing;
-      int maxCategories = _maxCategories;
-      double initialLH = tr->likelihood;
-      double *oldRat =    (double *)malloc(sizeof(double) * tr->cdta->endsite);
-      double *ratStored = (double *)malloc(sizeof(double) * tr->cdta->endsite);
-      double *oldwr =     (double *)malloc(sizeof(double) * tr->cdta->endsite);
-      double *oldwr2 =    (double *)malloc(sizeof(double) * tr->cdta->endsite);
-      double *lhs =       (double *)malloc(sizeof(double) * tr->cdta->endsite);
-      int *oldCategory =  (int *)malloc(sizeof(int) * tr->cdta->endsite);  
-      int oldNumber;   
+      double  
+	temp,  
+	lower_spacing, 
+	upper_spacing,
+	initialLH = tr->likelihood,	
+	*ratStored = (double *)malloc(sizeof(double) * tr->cdta->endsite),
+	*lhs =       (double *)malloc(sizeof(double) * tr->cdta->endsite),
+	**oldCategorizedRates = (double **)malloc(sizeof(double *) * tr->NumberOfModels);
+
+      int  
+	i,
+	k,
+	maxCategories = _maxCategories,
+	*oldCategory =  (int *)malloc(sizeof(int) * tr->cdta->endsite),
+	model,
+	*oldNumbers = (int *)malloc(sizeof(int) * tr->NumberOfModels);
   
-      assert(isTip(tr->start->number, tr->rdta->numsp));   
+      assert(isTip(tr->start->number, tr->rdta->numsp));         
 
       if(tr->multiGene)
 	determineFullTraversalMulti(tr->start, tr);
-       else
-	 determineFullTraversal(tr->start, tr);
+      else
+	determineFullTraversal(tr->start, tr);
 
       if(optimizeRateCategoryInvocations == 1)
 	{
@@ -1844,17 +2147,18 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
 	upper_spacing = 0.001;
       
       optimizeRateCategoryInvocations++;
-      
-      oldNumber = tr->NumberOfCategories;
-      
-      for(i = 0; i < tr->cdta->endsite; i++)
-	{    
-	  oldCategory[i] = tr->cdta->rateCategory[i];
-	  ratStored[i] = tr->cdta->patratStored[i];    
-	  oldRat[i] = tr->cdta->patrat[i];
-	  oldwr[i] =  tr->cdta->wr[i];
-	  oldwr2[i] =  tr->cdta->wr2[i];
-	}
+
+      memcpy(oldCategory, tr->cdta->rateCategory, sizeof(int) * tr->cdta->endsite);	     
+      memcpy(ratStored,   tr->cdta->patratStored, sizeof(double) * tr->cdta->endsite);
+
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{
+	  oldNumbers[model]          = tr->partitionData[model].numberOfCategories;
+
+	  oldCategorizedRates[model] = (double *)malloc(sizeof(double) * tr->maxCategories);
+	  
+	  memcpy(oldCategorizedRates[model], tr->partitionData[model].perSiteRates, tr->maxCategories * sizeof(double));	  	 	  
+	}      
       
 #ifdef _USE_PTHREADS
       tr->lhs = lhs;
@@ -1862,126 +2166,104 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
       tr->upper_spacing = upper_spacing;
       masterBarrier(THREAD_RATE_CATS, tr);
 #else
-      {
-	int m;
-	for(m = 0; m < tr->NumberOfModels; m++)      
-	  optRateCatModel(tr, m, lower_spacing, upper_spacing, lhs);
-      }
-#endif
+      for(model = 0; model < tr->NumberOfModels; model++)      
+	optRateCatModel(tr, model, lower_spacing, upper_spacing, lhs);
+#endif     
 
-     
-  
-       
-      {     
-	rateCategorize *rc = (rateCategorize *)malloc(sizeof(rateCategorize) * tr->cdta->endsite);
-	int where;
-	int found = 0;
-	for (i = 0; i < tr->cdta->endsite; i++)
-	  {
-	    rc[i].accumulatedSiteLikelihood = 0;
-	    rc[i].rate = 0;
-	  }
-	
-	where = 1;   
-	rc[0].accumulatedSiteLikelihood = lhs[0];
-	rc[0].rate = tr->cdta->patrat[0];
-	tr->cdta->rateCategory[0] = 0;
-	
-	for (i = 1; i < tr->cdta->endsite; i++) 
-	  {
-	    temp = tr->cdta->patrat[i];
-	    found = 0;
-	    for(k = 0; k < where; k++)
-	      {
-		if(temp == rc[k].rate || (fabs(temp - rc[k].rate) < 0.001))
-		  {
-		    found = 1;						
-		    rc[k].accumulatedSiteLikelihood += lhs[i];	
-		    break;
-		  }
-	      }
-	    if(!found)
-	      {	    
-		rc[where].rate = temp;	    
-		rc[where].accumulatedSiteLikelihood += lhs[i];	    
-		where++;
-	      }
-	  }
-	
-	qsort(rc, where, sizeof(rateCategorize), catCompare);
-	
-	if(where < maxCategories)
-	  {
-	    tr->NumberOfCategories = where;
-	    categorize(tr, rc);
-	  }
-	else
-	  {
-	    tr->NumberOfCategories = maxCategories;	
-	    categorize(tr, rc);
-	  }
-	
-	free(rc);
-	
-	for (i = 0; i < tr->cdta->endsite; i++) 
-	  {	
-	    temp = tr->cdta->patrat[tr->cdta->rateCategory[i]];
+      for(model = 0; model < tr->NumberOfModels; model++)
+	{     
+	  int 
+	    where = 1,
+	    found = 0,
+	    width = tr->partitionData[model].upper -  tr->partitionData[model].lower,
+	    upper = tr->partitionData[model].upper,
+	    lower = tr->partitionData[model].lower;
 	    
-	    tr->cdta->wr[i]  = wtemp = temp * tr->cdta->aliaswgt[i];
-	    tr->cdta->wr2[i] = temp * wtemp;
-
-	    if(tr->useFloat)
-	      {
-		tr->cdta->wr_FLOAT[i]  = ((float)tr->cdta->wr[i]);
-		tr->cdta->wr2_FLOAT[i] = ((float)tr->cdta->wr2[i]);
-	      }
-
-	  }        
+	  rateCategorize 
+	    *rc = (rateCategorize *)malloc(sizeof(rateCategorize) * width);		 
 	
-#ifdef _USE_PTHREADS
-	masterBarrier(THREAD_COPY_RATE_CATS, tr);
-#endif
-
-	evaluateGenericInitrav(tr, tr->start);
+	  for (i = 0; i < width; i++)
+	    {
+	      rc[i].accumulatedSiteLikelihood = 0.0;
+	      rc[i].rate = 0.0;
+	    }  
 	
-	if(tr->likelihood < initialLH)
-	  {	
-	    tr->NumberOfCategories = oldNumber;
-	    for (i = 0; i < tr->cdta->endsite; i++)
-	      {
-		tr->cdta->patratStored[i] = ratStored[i]; 
-		tr->cdta->rateCategory[i] = oldCategory[i];
-		tr->cdta->patrat[i] = oldRat[i];	    
-		tr->cdta->wr[i]  = oldwr[i];
-		tr->cdta->wr2[i] = oldwr2[i];
-		
-		if(tr->useFloat)
-		  {
-		    tr->cdta->wr_FLOAT[i]  = ((float)tr->cdta->wr[i]);
-		    tr->cdta->wr2_FLOAT[i] = ((float)tr->cdta->wr2[i]);
-		  }
-	      }       
+	  rc[0].accumulatedSiteLikelihood = lhs[lower];
+	  rc[0].rate = tr->cdta->patrat[lower];
+	
+	  tr->cdta->rateCategory[lower] = 0;
+	
+	  for (i = lower + 1; i < upper; i++) 
+	    {
+	      temp = tr->cdta->patrat[i];
+	      found = 0;
 	    
-#ifdef _USE_PTHREADS
-	    masterBarrier(THREAD_COPY_RATE_CATS, tr);
-#endif
-	    evaluateGenericInitrav(tr, tr->start);
-	  }
-      }
+	      for(k = 0; k < where; k++)
+		{
+		  if(temp == rc[k].rate || (fabs(temp - rc[k].rate) < 0.001))
+		    {
+		      found = 1;						
+		      rc[k].accumulatedSiteLikelihood += lhs[i];	
+		      break;
+		    }
+		}
+	    
+	      if(!found)
+		{	    
+		  rc[where].rate = temp;	    
+		  rc[where].accumulatedSiteLikelihood += lhs[i];	    
+		  where++;
+		}
+	    }
+	
+	  qsort(rc, where, sizeof(rateCategorize), catCompare);
+	
+	  if(where < maxCategories)
+	    {
+	      tr->partitionData[model].numberOfCategories = where;
+	      categorizePartition(tr, rc, model, lower, upper);
+	    }
+	  else
+	    {
+	      tr->partitionData[model].numberOfCategories = maxCategories;	
+	      categorizePartition(tr, rc, model, lower, upper);
+	    }
+	
+	  free(rc);
+	}
+        	
+      updatePerSiteRates(tr, TRUE);	
+
+      evaluateGenericInitrav(tr, tr->start);
       
-      /*
-	for(i = 0; i < tr->NumberOfCategories; i++)
-	printf("%f ", tr->cdta->patrat[i]);
-	printf("\n");
-      */
-      
-      
+      if(tr->likelihood < initialLH)
+	{	 		  
+	  for(model = 0; model < tr->NumberOfModels; model++)
+	    {
+	      tr->partitionData[model].numberOfCategories = oldNumbers[model];
+	      memcpy(tr->partitionData[model].perSiteRates, oldCategorizedRates[model], tr->maxCategories * sizeof(double));
+	    }	      
+	  
+	  memcpy(tr->cdta->patratStored, ratStored, sizeof(double) * tr->cdta->endsite);
+	  memcpy(tr->cdta->rateCategory, oldCategory, sizeof(int) * tr->cdta->endsite);	     
+	  
+	  updatePerSiteRates(tr, FALSE);
+	  
+	  evaluateGenericInitrav(tr, tr->start);
+
+	  /* printf("REVERT: %1.40f %1.40f\n", initialLH, tr->likelihood); */
+
+	  assert(initialLH == tr->likelihood);
+	}
+          
+      for(model = 0; model < tr->NumberOfModels; model++)
+	free(oldCategorizedRates[model]);
+                   
+      free(oldCategorizedRates);
       free(oldCategory);
-      free(oldRat);
-      free(ratStored);
-      free(oldwr);
-      free(oldwr2); 
+      free(ratStored);       
       free(lhs); 
+      free(oldNumbers);
     }
 }
   
@@ -2019,32 +2301,49 @@ void resetBranches(tree *tr)
 
 static void printAAmatrix(tree *tr, double epsilon)
 {
-  if(AAisGTR(tr))
+  
+
+  if(AAisGTR(tr) || AAisUnlinkedGTR(tr))
     {
-      int model;
+      int 
+	model;
       
       for(model = 0; model < tr->NumberOfModels; model++)
 	{
 	  if(tr->partitionData[model].dataType == AA_DATA) 
 	    {
-	      char gtrFileName[1024];
-	      char epsilonStr[1024];
-	      FILE *gtrFile;
-	      double *rates = tr->partitionData[model].substRates;
-	      double *f     = tr->partitionData[model].frequencies;
-	      double q[20][20];
-	      int    r = 0;
-	      int i, j;
+	      char 
+		gtrFileName[1024];
+		/*epsilonStr[1024];*/
+	      
+	      FILE 
+		*gtrFile;
+	      
+	      double 
+		*rates = tr->partitionData[model].substRates,
+		*f     = tr->partitionData[model].frequencies,
+		q[20][20];
+	      
+	      int    
+		r = 0,
+		i, 
+		j;
 
-	      assert(tr->partitionData[model].protModels == GTR);
+	      assert(tr->partitionData[model].protModels == GTR || tr->partitionData[model].protModels == GTR_UNLINKED);
 
-	      sprintf(epsilonStr, "%f", epsilon);
+	      /*sprintf(epsilonStr, "%f", epsilon);*/
 
 	      strcpy(gtrFileName, workdir);
 	      strcat(gtrFileName, "RAxML_proteinGTRmodel.");
 	      strcat(gtrFileName, run_id);
-	      strcat(gtrFileName, "_");
-	      strcat(gtrFileName, epsilonStr);
+	      
+	      /*
+		strcat(gtrFileName, "_");
+		strcat(gtrFileName, epsilonStr);
+	      */
+	      
+	      strcat(gtrFileName, "_Partition_");
+	      strcat(gtrFileName, tr->partitionData[model].partitionName);
 
 	      gtrFile = myfopen(gtrFileName, "wb");
 
@@ -2077,10 +2376,11 @@ static void printAAmatrix(tree *tr, double epsilon)
 	      fprintf(gtrFile, "\n");
 
 	      fclose(gtrFile);
-
-	      printBothOpen("\nPrinted intermediate AA substitution matrix to file %s\n\n", gtrFileName);
 	      
-	      break;
+	      if(tr->partitionData[model].protModels == GTR)
+		printBothOpen("\nPrinted linked AA GTR matrix that achieved an overall improvement of %f log likelihood units for partition %s to file %s\n\n", epsilon, tr->partitionData[model].partitionName, gtrFileName);	      	    
+	      else
+		printBothOpen("\nPrinted unlinked AA GTR matrix that achieved an overall improvement of %f log likelihood units for partition %s to file %s\n\n", epsilon, tr->partitionData[model].partitionName, gtrFileName);
 	    }
 
 	}	  
@@ -2107,14 +2407,10 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
   */  
   int *unlinked = (int *)malloc(sizeof(int) * tr->NumberOfModels);
   
-#ifdef _IPTOL
-  writeCheckpoint();
-#endif
-  
-  if(tr->useFloat)
-    modelEpsilon = 0.0002;
-  else 
-    modelEpsilon = 0.0001;
+
+  assert(!adef->useBinaryModelFile);
+ 
+  modelEpsilon = 0.0001;
   
   
   for(i = 0; i < tr->NumberOfModels; i++)
@@ -2148,12 +2444,13 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 		    count += tr->cdta->aliaswgt[i];		  		
 		  total += tr->cdta->aliaswgt[i];
 		}
+	      
 	      tr->partitionData[model].propInvariant = ((double)count)/((double) total);
 	    }   
 	  
 	  tr->partitionData[model].alpha = 1.0;     
 	  
-	  initReversibleGTR(tr, adef, model);      
+	  initReversibleGTR(tr, model);      
 	  
 	  makeGammaCats(tr->partitionData[model].alpha, tr->partitionData[model].gammaRates, 4); 
 	}
@@ -2183,19 +2480,16 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
     {           
       currentLikelihood = tr->likelihood;
       
-#ifdef _IPTOL
-      writeCheckpoint();
-#endif
+
       
-      optRatesGeneric(tr, adef, modelEpsilon, rateList);
+      optRatesGeneric(tr, modelEpsilon, rateList);
       
       onlyInitrav(tr, tr->start);         
       
       treeEvaluate(tr, 0.0625);                     	            
       
       switch(tr->rateHetModel)
-	{
-	  
+	{	  
 	case GAMMA_I:
 	  optAlpha(tr, modelEpsilon, alphaList);
 	  optInvar(tr, modelEpsilon, invarList); 	      	    	   	 
@@ -2208,7 +2502,8 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	  break;
 	case CAT:
 	  if(catOpt < 3)
-	    {	      	     	     
+	    {	      	
+	      evaluateGenericInitrav(tr, tr->start);
 	      optimizeRateCategories(tr, adef->categories);	      	     	      	      
 	      catOpt++;
 	    }
@@ -2217,9 +2512,65 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	  assert(0);
 	}       
 
-#ifdef _IPTOL
-      writeCheckpoint();
-#endif
+      if(tr->estimatePerSiteAA)
+	{
+	  int
+	    s,
+	    p,
+	    *modelAssignment = (int *)malloc(tr->cdta->endsite * sizeof(int));
+
+	  double 
+	    *bestScore = (double *)malloc(tr->cdta->endsite * sizeof(double));
+
+	  /*printf("enter: %f\n", tr->likelihood);*/
+
+	  for(s = 0; s < tr->cdta->endsite; s++)
+	    {
+	      modelAssignment[s] = -1;
+	      bestScore[s] = unlikely;
+	    }
+
+	  tr->estimatePerSiteAA = FALSE;
+
+	  for(p = 0; p < NUM_PROT_MODELS - 3; p++)
+	    {
+	      memcpy(tr->partitionData[0].EIGN,        tr->siteProtModel[p].EIGN,        sizeof(double) * 19);
+	      memcpy(tr->partitionData[0].EV,          tr->siteProtModel[p].EV,          sizeof(double) * 400);                
+	      memcpy(tr->partitionData[0].EI,          tr->siteProtModel[p].EI,          sizeof(double) * 380);
+	      memcpy(tr->partitionData[0].substRates,  tr->siteProtModel[p].substRates,  sizeof(double) * 190);        
+	      memcpy(tr->partitionData[0].frequencies, tr->siteProtModel[p].frequencies, sizeof(double) * 20);
+	      memcpy(tr->partitionData[0].tipVector,   tr->siteProtModel[p].tipVector,   sizeof(double) * 460);
+	      /* TODO at some point fix fracchange */
+	      onlyInitrav(tr, tr->start);     
+	      evaluateGenericVector(tr, tr->start);
+	      
+	      for(s = 0; s < tr->cdta->endsite; s++)
+		{
+		  if(tr->perSiteLL[s] > bestScore[s])
+		    {
+		      bestScore[s] = tr->perSiteLL[s];
+		      modelAssignment[s] = p;
+		    }
+		}
+	    }
+
+	  /*
+	    for(s = 0; s < tr->cdta->endsite; s++)
+	    printf("Site %d model %s\n", s, protModels[modelAssignment[s]]);
+	    printf("\n\n");
+	  */
+
+	  memcpy(tr->partitionData[0].perSiteAAModel, modelAssignment, tr->cdta->endsite * sizeof(int));
+	  tr->estimatePerSiteAA = TRUE;
+	  free(bestScore);
+	  free(modelAssignment);
+
+	  onlyInitrav(tr, tr->start); 	 	 
+	  treeEvaluate(tr, 0.1);
+	  /*evaluateGenericInitrav(tr, tr->start);*/
+	  /*printf("exit: %f\n", tr->likelihood);*/
+	  /*exit(0);*/
+	}
 
       printAAmatrix(tr, fabs(currentLikelihood - tr->likelihood));    
     }

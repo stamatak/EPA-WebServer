@@ -68,22 +68,6 @@
 #define minlikelihood  (1.0/twotothe256)
 #define minusminlikelihood -minlikelihood
 
-
-#define twotothe256_FLOAT  4294967296.0
-
-/* 18446744073709551616.0 */
-
-/*4294967296.0*/
-
-/* 18446744073709551616.0 */
-
-/*  2**64 (exactly)  */
-/* 4294967296 2**32 */
-
-#define minlikelihood_FLOAT      (1.0/twotothe256_FLOAT)
-#define minusminlikelihood_FLOAT -minlikelihood_FLOAT
-
-
 #define badRear         -1
 
 #define NUM_BRANCHES   128
@@ -154,30 +138,20 @@
 #define MAX(x,y)  (((x)>(y)) ?    (x)  : (y))
 #define NINT(x)   ((int) ((x)>0 ? ((x)+0.5) : ((x)-0.5)))
 
-#ifdef _USE_FPGA_LOG
-extern double log_approx (double input);
-#define LOG(x)  log_approx(x)
-#else
+
 #define LOG(x)  log(x)
-#endif
-
-
-#ifdef _USE_FPGA_EXP
-extern double exp_approx (double x);
-#define EXP(x)  exp_approx(x)
-#else
 #define EXP(x)  exp(x)
-#endif
 
 
-#define LOGF(x) logf(x)
+
+
 
 
 #define PointGamma(prob,alpha,beta)  PointChi2(prob,2.0*(alpha))/(2.0*(beta))
 
 #define programName        "RAxML"
-#define programVersion     "7.2.7"
-#define programDate        "August 2010"
+#define programVersion     "7.3.0"
+#define programDate        "June 2011"
 
 
 #define  TREE_EVALUATION            0
@@ -194,16 +168,15 @@ extern double exp_approx (double x);
 #define  BOOTSTOP_ONLY              14
 #define  COMPUTE_LHS                17
 #define  COMPUTE_BIPARTITION_CORRELATION 18
-#define  THOROUGH_PARSIMONY         19
 #define  COMPUTE_RF_DISTANCE        20
 #define  MORPH_CALIBRATOR           21
 #define  CONSENSUS_ONLY             22
 #define  MESH_TREE_SEARCH           23
-#define  FAST_SEARCH                24
-#define  MORPH_CALIBRATOR_PARSIMONY 25
-#define  EPA_ROGUE_TAXA             26           
+#define  FAST_SEARCH                24        
 #define  EPA_SITE_SPECIFIC_BIAS     27
 #define  SH_LIKE_SUPPORTS           28
+#define  CLASSIFY_MP                29
+#define  ANCESTRAL_STATES           30
 
 #define M_GTRCAT         1
 #define M_GTRGAMMA       2
@@ -216,20 +189,30 @@ extern double exp_approx (double x);
 #define M_64CAT          9
 #define M_64GAMMA        10
 
+#define DAYHOFF      0
+#define DCMUT        1
+#define JTT          2
+#define MTREV        3
+#define WAG          4
+#define RTREV        5
+#define CPREV        6
+#define VT           7
+#define BLOSUM62     8
+#define MTMAM        9
+#define LG           10
+#define MTART        11
+#define MTZOA        12
+#define PMB          13
+#define HIVB         14
+#define HIVW         15
+#define JTTDCMUT     16
+#define FLU          17 
+#define PROT_FILE    18
+#define GTR_UNLINKED 19
+#define GTR          20  /* GTR always needs to be the last one */
 
-#define DAYHOFF    0
-#define DCMUT      1
-#define JTT        2
-#define MTREV      3
-#define WAG        4
-#define RTREV      5
-#define CPREV      6
-#define VT         7
-#define BLOSUM62   8
-#define MTMAM      9
-#define LG         10
-#define GTR        11             /* GTR always needs to be the last one */
-#define NUM_PROT_MODELS 12
+#define NUM_PROT_MODELS 21
+
 
 /* bipartition stuff */
 
@@ -387,12 +370,6 @@ typedef struct
   stringHashtable;
 
 
-typedef struct
-{
-  unsigned int  parsimonyScore;
-  unsigned int  parsimonyState;
-}
-  parsimonyVector;
 
 
 typedef struct ratec
@@ -426,9 +403,9 @@ typedef struct epBrData
 {
   int    *countThem;
   int    *executeThem;
-  unsigned int *parsimonyScores;
+  unsigned int *parsimonyScore;
   double *branches;
-  double *bootstrapBranches;
+  double *distalBranches; 
   double *likelihoods;
   double originalBranchLength;
   char branchLabel[64];
@@ -436,12 +413,11 @@ typedef struct epBrData
   int rightNodeNumber;
   int *leftScaling;
   int *rightScaling;
-  parsimonyVector *leftParsimony;
-  parsimonyVector *rightParsimony;
   double branchLengths[NUM_BRANCHES];
   double *left;
   double *right;
-  int branchNumber; 
+  int branchNumber;
+  int jointLabel;
 } epaBranchData;
 
 typedef struct
@@ -496,6 +472,8 @@ typedef  struct noderec
 typedef struct
   {
     double lh;
+    double pendantBranch;
+    double distalBranch;    
     int number;
   }
   info;
@@ -530,11 +508,7 @@ typedef  struct {
   int             *rateCategory;
   int              endsite;     /* # of sequence patterns */
   double          *patrat;      /* rates per pattern */
-  double          *patratStored;
-  double          *wr;          /* weighted rate per pattern */
-  double          *wr2;         /* weight*rate**2 per pattern */
-  float           *wr_FLOAT;
-  float           *wr2_FLOAT;
+  double          *patratStored; 
 } cruncheddata;
 
 
@@ -543,22 +517,26 @@ typedef  struct {
 typedef struct {
   int     states;
   int     maxTipStates;
-  int     lower;
-  int     upper;
-  int     width;
+  size_t    lower;
+  size_t     upper;
+  size_t     width;
   int     dataType;
   int     protModels;
-  int     protFreqs;
+  boolean usePredefinedProtFreqs;
   int     mxtips;
+  int     numberOfCategories;
   int             **expVector;
   double          **xVector;
-  int             *xSpaceVector;
-  float           **xVector_FLOAT;
+  size_t             *xSpaceVector;
+  size_t             *expSpaceVector;
+ 
   unsigned char            **yVector;
-  parsimonyVector **pVector;
+ 
   char   *partitionName;
+  char   proteinSubstitutionFileName[2048];
+  double externalAAMatrix[420];
   double *sumBuffer;
-  float  *sumBuffer_FLOAT;
+ 
   double *gammaRates;
 
   double *EIGN;
@@ -570,30 +548,30 @@ typedef struct {
 
 
 
-  float *EV_FLOAT;
+  
 
   double *left;
   double *right;
 
-  float *left_FLOAT;
-  float *right_FLOAT;
+  
 
 
   double *frequencies;
   double *tipVector;
-  float  *tipVector_FLOAT;
+ 
   double *substRates;
   double *perSiteLL;
- 
+  
+  double *perSiteRates;
 
   double *wr;
   double *wr2;
 
-  float *wr_FLOAT;
-  float *wr2_FLOAT;
+  
 
   unsigned int    *globalScaler;
   double          *globalScalerDouble;
+  int    *perSiteAAModel;
   int    *wgt;
   int    *invariant;
   int    *rateCategory;
@@ -608,6 +586,9 @@ typedef struct {
   double *gapColumn;
 
   size_t initialGapVectorSize;
+
+  size_t parsimonyLength;
+  parsimonyNumber *parsVect; 
 
 } pInfo;
 
@@ -634,7 +615,24 @@ typedef struct List_{
   struct List_ *next; 
 } List;
 
+
+typedef struct {
+  double EIGN[19];             
+  double EV[400];                
+  double EI[380];
+  double substRates[190];        
+  double frequencies[20];      
+  double tipVector[460];
+  double fracchange[1];
+  double left[1600];
+  double right[1600];
+} siteAAModels;
+
 typedef  struct  {
+  siteAAModels siteProtModel[2 * (NUM_PROT_MODELS - 3)];
+
+  boolean estimatePerSiteAA;
+
   boolean useGappedImplementation;
   boolean saveMemory;
   
@@ -644,66 +642,8 @@ typedef  struct  {
   int    numberOfTipsForInsertion;
   int    *inserts;
   int    branchCounter;
-
-#ifdef _USE_PTHREADS    
-  /*
-    do we need this stuff ?
-  */
-  unsigned int **bitVectors;
-  hashtable *h;
- 
-    
-   
-
-  double *temporaryVector;
-  parsimonyVector *temporaryParsimonyVector;
-  int    *temporaryScaling;
-  double *temporarySumBuffer;
-  size_t contiguousVectorLength;
-  size_t contiguousScalingLength;  
- 
- 
-
-  int *contiguousRateCategory;
-  int *contiguousWgt;
-  int *contiguousInvariant;  
-
-  unsigned char **contiguousTips;
-
-  double *contiguousWR;
-  double *contiguousWR2;
-  double *contiguousPATRAT;      
   
-  int *expArray;
-  unsigned char *y_ptr;
-  double *likelihoodArray;
-  float  *likelihoodArray_FLOAT;
-  double *wrPtr;
-  double *wr2Ptr;
-
-  float *wrPtr_FLOAT;
-  float *wr2Ptr_FLOAT;
-
-  double *perSiteLLPtr;
-  int    *wgtPtr;
-  int    *invariantPtr;
-  int    *rateCategoryPtr;
-
-  int threadID;
-  double lower_spacing;
-  double upper_spacing;
-  double *lhs;
-#endif
-  
- 
-
-  parsimonyNumber **parsimonyState_A;
-  parsimonyNumber **parsimonyState_C;
-  parsimonyNumber **parsimonyState_G;
-  parsimonyNumber **parsimonyState_T;
-  unsigned int *parsimonyScore; 
-  int *ti;
-  unsigned int compressedWidth;
+  int *ti; 
   
   int numberOfTrees; 
 
@@ -729,12 +669,14 @@ typedef  struct  {
 
   traversalData td[NUM_BRANCHES];
 
-  int              useFloat;
+  unsigned int *parsimonyScore;
+
   int              maxCategories;
 
-  float            *sumBuffer_FLOAT;
+  double           *wr;
+  double           *wr2;
   double           *sumBuffer;
-  double           *perSiteLL;
+  double           *perSiteLL;  
   double           coreLZ[NUM_BRANCHES];
   int              modelNumber;
   int              multiBranch;
@@ -758,7 +700,6 @@ typedef  struct  {
   double           zDown[NUM_BRANCHES];
 
   boolean          useFastScaling;
-  
  
   branchInfo	   *bInf;
 
@@ -813,7 +754,6 @@ typedef  struct  {
   boolean          searchConvergenceCriterion;
   int              ntips;
   int              nextnode;
-  int              NumberOfCategories;
   int              NumberOfModels;
   int              parsimonyLength;
   
@@ -822,8 +762,7 @@ typedef  struct  {
   int              numberOfOutgroups;
   int             *outgroupNums;
   char           **outgroups;
-  boolean          fastEPA_ML;
-  boolean          fastEPA_MP;
+  boolean          useEpaHeuristics;
   double           fastEPAthreshold;
   boolean          bigCutoff;
   boolean          partitionSmoothed[NUM_BRANCHES];
@@ -858,7 +797,57 @@ typedef  struct  {
 
  
   int mr_thresh;
+
+  boolean wasRooted;
+  nodeptr leftRootNode;
+  nodeptr rightRootNode;
+  int rootLabel;
+  
+ 
+
 #ifdef _USE_PTHREADS
+
+  double *ancestralStates;
+
+  hashtable *h;
+ 
+    
+   
+
+  double *temporaryVector;  
+  int    *temporaryScaling;
+  double *temporarySumBuffer;
+  size_t contiguousVectorLength;
+  size_t contiguousScalingLength;  
+ 
+ 
+
+  int *contiguousRateCategory;
+  int *contiguousWgt;
+  int *contiguousInvariant;  
+
+  unsigned char **contiguousTips;
+
+  double *contiguousWR;
+  double *contiguousWR2;
+  
+  
+  unsigned char *y_ptr;
+  
+  double *wrPtr;
+  double *wr2Ptr;
+
+  
+
+  double *perSiteLLPtr;
+  int    *wgtPtr;
+  int    *invariantPtr;
+  int    *rateCategoryPtr;
+
+  int threadID;
+  double lower_spacing;
+  double upper_spacing;
+  double *lhs;
 
   /* stuff for parallel MRE */
 
@@ -998,13 +987,12 @@ typedef  struct {
   boolean        userProteinModel;
   boolean        computeELW;
   boolean        computeDistance;
-  boolean        thoroughInsertion;
   boolean        compressPatterns;
   boolean        useSecondaryStructure; 
   double         likelihoodEpsilon;
   double         gapyness;
   int            similarityFilterMode;
-  double        *externalAAMatrix;
+  double        externalAAMatrix[420];
   boolean       useFloat;
   boolean       readTaxaOnly;
   int           meshSearch;  
@@ -1013,6 +1001,7 @@ typedef  struct {
   boolean       leaveDropMode;
   int           slidingWindowSize;
 } analdef;
+
 
 typedef struct 
 {
@@ -1092,7 +1081,7 @@ extern void printStartingTree ( tree *tr, analdef *adef, boolean finalPrint );
 extern void writeInfoFile ( analdef *adef, tree *tr, double t );
 extern int main ( int argc, char *argv[] );
 extern void calcBipartitions ( tree *tr, analdef *adef, char *bestTreeFileName, char *bootStrapFileName );
-extern void initReversibleGTR (tree *tr, analdef *adef, int model);
+extern void initReversibleGTR (tree *tr, int model);
 extern double LnGamma ( double alpha );
 extern double IncompleteGamma ( double x, double alpha, double ln_gamma_alpha );
 extern double PointNormal ( double prob );
@@ -1102,6 +1091,12 @@ extern void initModel ( tree *tr, rawdata *rdta, cruncheddata *cdta, analdef *ad
 extern void doAllInOne ( tree *tr, analdef *adef );
 
 extern void classifyML(tree *tr, analdef *adef);
+extern void classifyMP(tree *tr, analdef *adef);
+extern void markTips(nodeptr p, int *perm, int maxTips);
+extern char *Tree2StringClassify(char *treestr, tree *tr, int *inserts, 
+				 boolean  originalTree, boolean jointLabels, boolean likelihood);
+
+
 extern void doBootstrap ( tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta );
 extern void doInference ( tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta );
 extern void resetBranches ( tree *tr );
@@ -1122,7 +1117,7 @@ extern void makeRandomTree ( tree *tr, analdef *adef );
 extern void nodeRectifier ( tree *tr );
 extern void makeParsimonyTreeThorough(tree *tr, analdef *adef);
 extern void makeParsimonyTree ( tree *tr, analdef *adef );
-extern void makeParsimonyTreeFastDNA(tree *tr, analdef *adef);
+extern void makeParsimonyTreeFast(tree *tr, analdef *adef, boolean full);
 extern void makeParsimonyTreeIncomplete ( tree *tr, analdef *adef );
 extern void makeParsimonyInsertions(tree *tr, nodeptr startNodeQ, nodeptr startNodeR);
 
@@ -1210,8 +1205,8 @@ extern void   newviewIterative(tree *);
 
 extern double evaluateIterative(tree *, boolean writeVector);
 
-extern void *malloc_aligned( size_t size);
-
+extern void *malloc_aligned( size_t size, size_t align);
+extern double FABS(double x);
 
 
 
@@ -1230,7 +1225,7 @@ extern void newviewParsimonyIterative(tree *);
 extern unsigned int evaluateParsimonyIterativeFast(tree *);
 extern void newviewParsimonyIterativeFast(tree *);
 
-extern unsigned int evaluatePerSiteParsimony(tree *tr, nodeptr p, unsigned int *siteParsimony);
+
 extern void initravParsimonyNormal(tree *tr, nodeptr p);
 
 extern double evaluateGenericInitrav (tree *tr, nodeptr p);
@@ -1240,22 +1235,20 @@ extern void categorizeIterative(tree *, int startIndex, int endIndex);
 extern void onlyInitrav(tree *tr, nodeptr p);
 extern void onlyInitravPartition(tree *tr, nodeptr p, int model);
 
-extern void fixModelIndices(tree *tr, int endsite);
+extern void fixModelIndices(tree *tr, int endsite, boolean fixRates);
 extern void calculateModelOffsets(tree *tr);
 extern void gammaToCat(tree *tr);
 extern void catToGamma(tree *tr, analdef *adef);
 extern void handleExcludeFile(tree *tr, analdef *adef, rawdata *rdta);
-
+extern void printBaseFrequencies(tree *tr);
 extern nodeptr findAnyTip(nodeptr p, int numsp);
 
-extern void parseProteinModel(analdef *adef);
-
+extern void parseProteinModel(double *externalAAMatrix, char *fileName);
+extern int filexists(char *filename);
 extern void computeFullTraversalInfo(nodeptr p, traversalInfo *ti, int *counter, int maxTips, int numBranches);
 
-extern void computeNextReplicate(tree *tr, long *seed, int *originalRateCategories, int *originalInvariant, boolean isRapid);
+extern void computeNextReplicate(tree *tr, long *seed, int *originalRateCategories, int *originalInvariant, boolean isRapid, boolean fixRates);
 /*extern void computeNextReplicate(tree *tr, analdef *adef, int *originalRateCategories, int *originalInvariant);*/
-
-extern void putWAG(double *ext_initialRates);
 
 extern void reductionCleanup(tree *tr, int *originalRateCategories, int *originalInvariant);
 extern void parseSecondaryStructure(tree *tr, analdef *adef, int sites);
@@ -1300,11 +1293,16 @@ extern void testGapped(tree *tr);
 extern boolean issubset(unsigned int* bipA, unsigned int* bipB, unsigned int vectorLen);
 extern boolean compatible(entry* e1, entry* e2, unsigned int bvlen);
 
-extern void computeRogueTaxaEPA(tree *tr);
 
-#ifdef _IPTOL
-extern void writeCheckpoint();
-#endif
+
+extern int *permutationSH(tree *tr, int nBootstrap, long _randomSeed);
+
+extern void updatePerSiteRates(tree *tr, boolean scaleRates);
+
+extern void newviewIterativeAncestral(tree *tr);
+extern void newviewGenericAncestral(tree *tr, nodeptr p, boolean atRoot);
+extern void computeAncestralStates(tree *tr, double referenceLikelihood, analdef *adef);
+extern void makeP_Flex(double z1, double z2, double *rptr, double *EI,  double *EIGN, int numberOfCategories, double *left, double *right, const int numStates);
 
 #ifdef _WAYNE_MPI
 
@@ -1314,6 +1312,8 @@ extern boolean computeBootStopMPI(tree *tr, char *bootStrapFileName, analdef *ad
 
 
 #ifdef _USE_PTHREADS
+
+extern size_t getContiguousVectorLength(tree *tr);
 
 extern void makenewzClassify(tree *tr, int maxiter, double *result, double *z0, double *x1_start, double *x2_start,
 			     unsigned char *tipX1,  unsigned char *tipX2, int tipCase, boolean *partitionConverged);
@@ -1327,7 +1327,7 @@ extern void newviewClassifySpecial(tree *tr, double *x1_start, double *x2_start,
 				   unsigned char *tipX1,  unsigned char *tipX2, int tipCase, double *pz, double *qz);
 extern double evalCL(tree *tr, double *x2, int *ex2, unsigned char *tip, double *pz);
 
-extern void testInsertThoroughIterative(tree *tr, int branchNumber, boolean bootstrap);
+extern void testInsertThoroughIterative(tree *tr, int branchNumber);
 
 
 /* parallel MRE stuff */
@@ -1346,8 +1346,6 @@ extern void testInsertThoroughIterative(tree *tr, int branchNumber, boolean boot
 #define THREAD_MAKENEWZ               2
 #define THREAD_MAKENEWZ_FIRST         3
 #define THREAD_RATE_CATS              4
-#define THREAD_NEWVIEW_PARSIMONY      5
-#define THREAD_EVALUATE_PARSIMONY     6
 #define THREAD_EVALUATE_VECTOR        7
 #define THREAD_ALLOC_LIKELIHOOD       8
 #define THREAD_COPY_RATE_CATS         9
@@ -1365,20 +1363,19 @@ extern void testInsertThoroughIterative(tree *tr, int branchNumber, boolean boot
 #define THREAD_GAMMA_TO_CAT           21
 #define THREAD_NEWVIEW_MASKED         22
 #define THREAD_COPY_PARAMS            26
-#define THREAD_PARSIMONY_RATCHET            27
 #define THREAD_INIT_EPA                     28
 #define THREAD_GATHER_LIKELIHOOD            29
 #define THREAD_INSERT_CLASSIFY              30
 #define THREAD_INSERT_CLASSIFY_THOROUGH     31
 #define THREAD_GATHER_PARSIMONY             32
-#define THREAD_INSERT_CLASSIFY_THOROUGH_BS  33
 #define THREAD_PARSIMONY_INSERTIONS         34
 #define THREAD_PREPARE_EPA_PARSIMONY        35
 #define THREAD_CLEANUP_EPA_PARSIMONY        36
-#define THREAD_CONTIGUOUS_REPLICATE         37
 #define THREAD_USE_GAPPED                   38
 #define THREAD_PREPARE_BIPS_FOR_PRINT       39
 #define THREAD_MRE_COMPUTE                  40
+#define THREAD_NEWVIEW_ANCESTRAL            41
+#define THREAD_GATHER_ANCESTRAL             42
 
 /*
 

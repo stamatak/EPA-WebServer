@@ -103,7 +103,7 @@ static void singleBootstrap(tree *tr, int i, analdef *adef, rawdata *rdta, crunc
   tr->treeID = i;
   tr->checkPointCounter = 0;
      
-  computeNextReplicate(tr, &adef->boot, (int*)NULL, (int*)NULL, FALSE);
+  computeNextReplicate(tr, &adef->boot, (int*)NULL, (int*)NULL, FALSE, FALSE);
   
   initModel(tr, rdta, cdta, adef);                                   
          
@@ -166,7 +166,7 @@ static int compareTopolRell(const void *p1, const void *p2)
 }
 
 
-void fixModelIndices(tree *tr, int endsite)
+void fixModelIndices(tree *tr, int endsite, boolean fixRates)
 {
   int model, i;
 
@@ -203,16 +203,9 @@ void fixModelIndices(tree *tr, int endsite)
       
       /* SOS what about sumBuffer? */
       /* tr->partitionData[model].sumBuffer    = &tr->sumBuffer[offset]; */
-      tr->partitionData[model].perSiteLL    = &tr->perSiteLL[lower];
-      tr->partitionData[model].wr           = &tr->cdta->wr[lower];
-      tr->partitionData[model].wr2          = &tr->cdta->wr2[lower];
+      tr->partitionData[model].perSiteLL    = &tr->perSiteLL[lower];     
       tr->partitionData[model].wgt          = &tr->cdta->aliaswgt[lower];
-
-      if(tr->useFloat)
-	{
-	  tr->partitionData[model].wr_FLOAT           = &tr->cdta->wr_FLOAT[lower];
-	  tr->partitionData[model].wr2_FLOAT          = &tr->cdta->wr2_FLOAT[lower];
-	}
+      
 
       tr->partitionData[model].invariant    = &tr->invariant[lower];
       tr->partitionData[model].rateCategory = &tr->cdta->rateCategory[lower];
@@ -242,12 +235,14 @@ void fixModelIndices(tree *tr, int endsite)
 #else
   masterBarrier(THREAD_FIX_MODEL_INDICES, tr);
 #endif
+
+  
+  if(fixRates)
+    updatePerSiteRates(tr, TRUE);
 }
 
 void reductionCleanup(tree *tr, int *originalRateCategories, int *originalInvariant)
 {
-  int j;
-
   tr->cdta->endsite = tr->originalCrunchedLength;
 
   memcpy(tr->cdta->aliaswgt, tr->originalWeights, sizeof(int) * tr->cdta->endsite);
@@ -255,26 +250,14 @@ void reductionCleanup(tree *tr, int *originalRateCategories, int *originalInvari
   memcpy(tr->dataVector, tr->originalDataVector,  sizeof(int) * tr->cdta->endsite);
 
   memcpy(tr->cdta->rateCategory, originalRateCategories, sizeof(int) * tr->cdta->endsite);
-  memcpy(tr->invariant,          originalInvariant,      sizeof(int) * tr->cdta->endsite); 
+  memcpy(tr->invariant,          originalInvariant,      sizeof(int) * tr->cdta->endsite);                      
   
-  for (j = 0; j < tr->originalCrunchedLength; j++) 
-    {	
-      double temp, wtemp;     
-      temp = tr->cdta->patrat[originalRateCategories[j]];
-      tr->cdta->wr[j]  = wtemp = temp * tr->cdta->aliaswgt[j];
-      tr->cdta->wr2[j] = temp * wtemp;
+  updatePerSiteRates(tr, TRUE);
 
-      if(tr->useFloat)
-	{
-	  tr->cdta->wr_FLOAT[j]  = ((float)tr->cdta->wr[j]);
-	  tr->cdta->wr2_FLOAT[j] = ((float)tr->cdta->wr2[j]);
-	}
-    }                           
-      
   memcpy(tr->rdta->y0, tr->rdta->yBUF, ((size_t)tr->rdta->numsp) * ((size_t)tr->cdta->endsite) * sizeof(char));  
       
   tr->cdta->endsite = tr->originalCrunchedLength;
-  fixModelIndices(tr, tr->originalCrunchedLength);      
+  fixModelIndices(tr, tr->originalCrunchedLength, TRUE);      
 }
 
 
@@ -282,7 +265,7 @@ void reductionCleanup(tree *tr, int *originalRateCategories, int *originalInvari
 
 
 
-void computeNextReplicate(tree *tr, long *randomSeed, int *originalRateCategories, int *originalInvariant, boolean isRapid)
+void computeNextReplicate(tree *tr, long *randomSeed, int *originalRateCategories, int *originalInvariant, boolean isRapid, boolean fixRates)
 { 
   int pos, nonzero, j, model, w;   
   int *weightBuffer, endsite;                
@@ -328,25 +311,9 @@ void computeNextReplicate(tree *tr, long *randomSeed, int *originalRateCategorie
 
   endsite = 0;
   
-  for (j = 0; j < tr->originalCrunchedLength; j++) 
-    {	      
-      if(tr->cdta->aliaswgt[j] > 0)
-	endsite++;
-      if(isRapid)
-	{
-	  double temp, wtemp;
-	  temp = tr->cdta->patrat[originalRateCategories[j]];
-	  tr->cdta->wr[j]  = wtemp = temp * tr->cdta->aliaswgt[j];
-	  tr->cdta->wr2[j] = temp * wtemp;
-
-	  if(tr->useFloat)
-	    {
-	      tr->cdta->wr_FLOAT[j]  = ((float)tr->cdta->wr[j]);
-	      tr->cdta->wr2_FLOAT[j] = ((float)tr->cdta->wr2[j]);
-	    }
-
-	}
-    }          
+  for (j = 0; j < tr->originalCrunchedLength; j++)         
+    if(tr->cdta->aliaswgt[j] > 0)
+      endsite++;    
   
   weights = tr->cdta->aliaswgt;
 
@@ -370,16 +337,7 @@ void computeNextReplicate(tree *tr, long *randomSeed, int *originalRateCategorie
 	  tr->model[l]              = tr->originalModel[j];
 
 	  if(isRapid)
-	    {
-	      tr->cdta->wr[l]           = tr->cdta->wr[j];
-	      tr->cdta->wr2[l]          = tr->cdta->wr2[j];	 
-
-	      if(tr->useFloat)
-		{
-		  tr->cdta->wr_FLOAT[l]  = ((float)tr->cdta->wr[j]);
-		  tr->cdta->wr2_FLOAT[l] = ((float)tr->cdta->wr2[j]);
-		}
-
+	    {	      
 	      tr->cdta->rateCategory[l] = originalRateCategories[j];
 	      tr->invariant[l]          = originalInvariant[j];
 	    }
@@ -388,7 +346,7 @@ void computeNextReplicate(tree *tr, long *randomSeed, int *originalRateCategorie
     }
 
   tr->cdta->endsite = endsite;
-  fixModelIndices(tr, endsite);
+  fixModelIndices(tr, endsite, fixRates);
 }
 
 
@@ -413,17 +371,13 @@ static pInfo *allocParams(tree *tr)
       partBuffer[i].frequencies =  (double*)malloc(pl->frequenciesLength * sizeof(double));	  
       partBuffer[i].tipVector   = (double *)malloc(pl->tipVectorLength * sizeof(double));
       
-      if(tr->useFloat)
-	{
-	  partBuffer[i].EV_FLOAT          = (float *)malloc(pl->evLength * sizeof(float));
-	  partBuffer[i].tipVector_FLOAT   = (float *)malloc(pl->tipVectorLength * sizeof(float));
-	}      
+     
     }
 
   return partBuffer;      
 }
 
-static void freeParams(int numberOfModels, pInfo *partBuffer, tree *tr)
+static void freeParams(int numberOfModels, pInfo *partBuffer)
 {
   int i;
 
@@ -435,13 +389,6 @@ static void freeParams(int numberOfModels, pInfo *partBuffer, tree *tr)
       free(partBuffer[i].substRates);
       free(partBuffer[i].frequencies); 
       free(partBuffer[i].tipVector);  
-
-      if(tr->useFloat)
-	{
-	  free(partBuffer[i].EV_FLOAT);
-	  free(partBuffer[i].tipVector_FLOAT);
-	}
-
     }
       
 }
@@ -465,17 +412,12 @@ static void copyParams(int numberOfModels, pInfo *dst, pInfo *src, tree *tr)
        memcpy(dst[i].frequencies, src[i].frequencies, pl->frequenciesLength * sizeof(double));	  
        memcpy(dst[i].tipVector,   src[i].tipVector,   pl->tipVectorLength * sizeof(double));
        
-       if(tr->useFloat)
-	 {
-	   memcpy(dst[i].EV_FLOAT,          src[i].EV_FLOAT,          pl->evLength * sizeof(float));
-	   memcpy(dst[i].tipVector_FLOAT,   src[i].tipVector_FLOAT,   pl->tipVectorLength * sizeof(float));
-	 }     
+       
     }
   
 #ifdef _USE_PTHREADS
   masterBarrier(THREAD_COPY_PARAMS, tr);
 #endif    
-
 }
 
 
@@ -716,8 +658,10 @@ void doAllInOne(tree *tr, analdef *adef)
 	    }	  	  
 	}
 
-      computeNextReplicate(tr, &adef->rapidBoot, originalRateCategories, originalInvariant, TRUE); 
+      computeNextReplicate(tr, &adef->rapidBoot, originalRateCategories, originalInvariant, TRUE, TRUE); 
       resetBranches(tr);
+
+     
 
       evaluateGenericInitrav(tr, tr->start);
     
@@ -738,18 +682,19 @@ void doAllInOne(tree *tr, analdef *adef)
 	  if(tr->rateHetModel == CAT)
 	    {
 	      copyParams(tr->NumberOfModels, tr->partitionData, gammaParams, tr);	      
-	      endsite = tr->cdta->endsite;
-	      tr->cdta->endsite = tr->originalCrunchedLength;
+	      /*endsite = tr->cdta->endsite;
+		tr->cdta->endsite = tr->originalCrunchedLength;*/
 	      catToGamma(tr, adef);
-	      tr->cdta->endsite = endsite;
+	      /*tr->cdta->endsite = endsite;*/
 	      
 	      resetBranches(tr);
+	      onlyInitrav(tr, tr->start);
 	      treeEvaluate(tr, 2.0);
 	  
-	      endsite = tr->cdta->endsite;
-	      tr->cdta->endsite = tr->originalCrunchedLength;
+	      /*endsite = tr->cdta->endsite;
+		tr->cdta->endsite = tr->originalCrunchedLength;*/
 	      gammaToCat(tr);
-	      tr->cdta->endsite = endsite;	 	    
+	      /*tr->cdta->endsite = endsite;	 	    */
 	
 	      copyParams(tr->NumberOfModels, tr->partitionData, catParams, tr);	      
 	      tr->likelihood = lh;
@@ -808,10 +753,10 @@ void doAllInOne(tree *tr, analdef *adef)
   bootstrapsPerformed = i;
 #endif
 
-  freeParams(tr->NumberOfModels, catParams, tr);
+  freeParams(tr->NumberOfModels, catParams);
   free(catParams);
 
-  freeParams(tr->NumberOfModels, gammaParams, tr);
+  freeParams(tr->NumberOfModels, gammaParams);
   free(gammaParams);
 
   if(adef->bootStopping)
@@ -919,8 +864,12 @@ void doAllInOne(tree *tr, analdef *adef)
 
   resetBranches(tr);
 
-  evaluateGenericInitrav(tr, tr->start);   
   
+
+  evaluateGenericInitrav(tr, tr->start);   
+
+  
+
   modOpt(tr, adef, TRUE, adef->likelihoodEpsilon, FALSE);  
 
 #ifdef _WAYNE_MPI
@@ -958,7 +907,9 @@ void doAllInOne(tree *tr, analdef *adef)
       rl->t[i]->likelihood = unlikely;
     
       if(i % fastEvery == 0)
-	{	  	 
+	{
+	 
+	  
 	  restoreTL(rl, tr, i); 	 	    	   	
 	  
 	  resetBranches(tr);	 
@@ -969,6 +920,8 @@ void doAllInOne(tree *tr, analdef *adef)
 	  	  
 	  optimizeRAPID(tr, adef);	  			         	  
 	  
+	 
+
 	  saveTL(rl, tr, i); 	 
 	}    
     }     
@@ -1442,7 +1395,10 @@ void doInference(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
          
       loopTime = gettime();
                                              
-      initModel(tr, rdta, cdta, adef);      
+      initModel(tr, rdta, cdta, adef); 
+
+      if(i == 0)
+	printBaseFrequencies(tr);
      
       getStartingTree(tr, adef); 
 
@@ -1507,7 +1463,14 @@ void doInference(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
 	{
 	  restoreTL(rl, tr, best);
 	  onlyInitrav(tr, tr->start);
-	  modOpt(tr, adef, FALSE, adef->likelihoodEpsilon, FALSE);  
+	  if(!adef->useBinaryModelFile)
+	    modOpt(tr, adef, FALSE, adef->likelihoodEpsilon, FALSE); 
+	  else
+	    {
+	      readBinaryModel(tr);
+	      evaluateGenericInitrav(tr, tr->start);
+	      treeEvaluate(tr, 2);
+	    }
 	  bestLH = tr->likelihood;
 	  tr->likelihoods[best] = tr->likelihood;
 	  saveTL(rl, tr, best);

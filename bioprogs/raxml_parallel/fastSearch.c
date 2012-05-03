@@ -1070,7 +1070,7 @@ static int encapsulateNNIs(tree *tr, double *lhVectors[3], boolean shSupport)
   return interchanges;
 }
 
-static int *permutationSH(tree *tr, int nBootstrap) 
+int *permutationSH(tree *tr, int nBootstrap, long _randomSeed) 
 {
   int 
     replicate,
@@ -1081,7 +1081,7 @@ static int *permutationSH(tree *tr, int nBootstrap)
     *nonzero = (int*)calloc(tr->NumberOfModels, sizeof(int));
   
   long 
-    randomSeed = 12345;
+    randomSeed = _randomSeed;
   
   size_t 
     bufferSize;
@@ -1165,6 +1165,7 @@ void fastSearch(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
     *f;
 
   int
+    model,
     interchanges;
 
  
@@ -1207,7 +1208,8 @@ void fastSearch(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
   /* print out the number of rate categories used for the CAT model, one should 
      use less then the default, e.g., -c 16 works quite well */
 
-  printBothOpen("Cats: %d\n", tr->NumberOfCategories);
+  for(model = 0; model < tr->NumberOfModels; model++)
+    printBothOpen("Partion %d number of Cats: %d\n", model, tr->partitionData[model].numberOfCategories);
 
   /* 
      means that we are going to do thorough insertions 
@@ -1234,20 +1236,15 @@ void fastSearch(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
     
 
       likelihood = linearSPRs(tr, 20, adef->veryFast);          
-      
-     
-
-      /* optimize br-lens of resulting topology a bit */
+           
       evaluateGeneric(tr, tr->start); 
-               
-      interchanges = encapsulateNNIs(tr, lhVectors, FALSE);           
       
-
-      /*treeEvaluate(tr, 1);             */
-
-      printBothOpen("%f\n", tr->likelihood);
+      /* the NNIs also optimize br-lens of resulting topology a bit */
+      interchanges = encapsulateNNIs(tr, lhVectors, FALSE);                    
+ 
+      printBothOpen("LH after SPRs %f, after NNI %f\n", likelihood, tr->likelihood);
     }
-  while(ABS(likelihood - startLikelihood) > 0.5);
+  while(ABS(tr->likelihood - startLikelihood) > 0.5);
 
  
   
@@ -1301,7 +1298,7 @@ void shSupports(tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta)
 
   assert(adef->restart);
     
-  tr->resample = permutationSH(tr, 1000);
+  tr->resample = permutationSH(tr, 1000, 12345);
     
   lhVectors[0] = (double *)malloc(sizeof(double) * tr->cdta->endsite);
   lhVectors[1] = (double *)malloc(sizeof(double) * tr->cdta->endsite);
