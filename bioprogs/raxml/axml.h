@@ -32,6 +32,11 @@
 #include <assert.h>
 #include <stdint.h>
 
+#ifdef __AVX
+#define BYTE_ALIGNMENT 32
+#else
+#define BYTE_ALIGNMENT 16
+#endif
 
 #ifdef _USE_PTHREADS
 
@@ -150,8 +155,8 @@
 #define PointGamma(prob,alpha,beta)  PointChi2(prob,2.0*(alpha))/(2.0*(beta))
 
 #define programName        "RAxML"
-#define programVersion     "7.3.0"
-#define programDate        "June 2011"
+#define programVersion     "7.3.2"
+#define programDate        "June 2012"
 
 
 #define  TREE_EVALUATION            0
@@ -177,6 +182,9 @@
 #define  SH_LIKE_SUPPORTS           28
 #define  CLASSIFY_MP                29
 #define  ANCESTRAL_STATES           30
+#define  QUARTET_CALCULATION        31
+#define  THOROUGH_OPTIMIZATION      32
+#define  OPTIMIZE_BR_LEN_SCALER     33
 
 #define M_GTRCAT         1
 #define M_GTRGAMMA       2
@@ -207,11 +215,13 @@
 #define HIVW         15
 #define JTTDCMUT     16
 #define FLU          17 
-#define PROT_FILE    18
-#define GTR_UNLINKED 19
-#define GTR          20  /* GTR always needs to be the last one */
+#define DUMMY        18
+#define DUMMY2       19
+#define PROT_FILE    20
+#define GTR_UNLINKED 21
+#define GTR          22  /* GTR always needs to be the last one */
 
-#define NUM_PROT_MODELS 21
+#define NUM_PROT_MODELS 23
 
 
 /* bipartition stuff */
@@ -563,6 +573,7 @@ typedef struct {
   double *perSiteLL;
   
   double *perSiteRates;
+  double *unscaled_perSiteRates;
 
   double *wr;
   double *wr2;
@@ -685,6 +696,9 @@ typedef  struct  {
   int              consensusType;
   double           wcThreshold;
 
+  double           brLenScaler;
+  double          *storedBrLens;
+
   int              multiGene;
 
   nodeptr          startVector[NUM_BRANCHES];
@@ -803,7 +817,8 @@ typedef  struct  {
   nodeptr rightRootNode;
   int rootLabel;
   
- 
+  boolean useGammaMedian;
+  boolean noRateHet;
 
 #ifdef _USE_PTHREADS
 
@@ -1000,6 +1015,7 @@ typedef  struct {
   boolean       useBinaryModelFile;
   boolean       leaveDropMode;
   int           slidingWindowSize;
+  boolean       checkForUndeterminedSequences;
 } analdef;
 
 
@@ -1086,7 +1102,7 @@ extern double LnGamma ( double alpha );
 extern double IncompleteGamma ( double x, double alpha, double ln_gamma_alpha );
 extern double PointNormal ( double prob );
 extern double PointChi2 ( double prob, double v );
-extern void makeGammaCats (double alpha, double *gammaRates, int K);
+extern void makeGammaCats (double alpha, double *gammaRates, int K,  boolean useMedian);
 extern void initModel ( tree *tr, rawdata *rdta, cruncheddata *cdta, analdef *adef );
 extern void doAllInOne ( tree *tr, analdef *adef );
 
@@ -1100,6 +1116,7 @@ extern char *Tree2StringClassify(char *treestr, tree *tr, int *inserts,
 extern void doBootstrap ( tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta );
 extern void doInference ( tree *tr, analdef *adef, rawdata *rdta, cruncheddata *cdta );
 extern void resetBranches ( tree *tr );
+extern void scaleBranches(tree *tr, boolean fromFile);
 extern void modOpt ( tree *tr, analdef *adef , boolean resetModel, double likelihoodEpsilon, boolean testGappedImplementation);
 
 
@@ -1205,7 +1222,7 @@ extern void   newviewIterative(tree *);
 
 extern double evaluateIterative(tree *, boolean writeVector);
 
-extern void *malloc_aligned( size_t size, size_t align);
+extern void *malloc_aligned( size_t size);
 extern double FABS(double x);
 
 
@@ -1293,7 +1310,7 @@ extern void testGapped(tree *tr);
 extern boolean issubset(unsigned int* bipA, unsigned int* bipB, unsigned int vectorLen);
 extern boolean compatible(entry* e1, entry* e2, unsigned int bvlen);
 
-
+extern void nniSmooth(tree *tr, nodeptr p, int maxtimes);
 
 extern int *permutationSH(tree *tr, int nBootstrap, long _randomSeed);
 
@@ -1376,6 +1393,7 @@ extern void testInsertThoroughIterative(tree *tr, int branchNumber);
 #define THREAD_MRE_COMPUTE                  40
 #define THREAD_NEWVIEW_ANCESTRAL            41
 #define THREAD_GATHER_ANCESTRAL             42
+#define THREAD_OPT_SCALER                   43
 
 /*
 
@@ -1416,3 +1434,29 @@ extern void masterBarrier(int jobType, tree *tr);
 
 
 
+#ifdef __AVX
+void newviewGTRCAT_AVX(int tipCase,  double *EV,  int *cptr,
+    double *x1_start, double *x2_start,  double *x3_start, double *tipVector,
+    int *ex3, unsigned char *tipX1, unsigned char *tipX2,
+    int n,  double *left, double *right, int *wgt, int *scalerIncrement, const boolean useFastScaling);
+
+
+void newviewGenericCATPROT_AVX(int tipCase, double *extEV,
+    int *cptr,
+    double *x1, double *x2, double *x3, double *tipVector,
+    int *ex3, unsigned char *tipX1, unsigned char *tipX2,
+    int n, double *left, double *right, int *wgt, int *scalerIncrement, const boolean useFastScaling);
+
+
+void newviewGTRGAMMA_AVX(int tipCase,
+    double *x1_start, double *x2_start, double *x3_start,
+    double *EV, double *tipVector,
+    int *ex3, unsigned char *tipX1, unsigned char *tipX2,
+    const int n, double *left, double *right, int *wgt, int *scalerIncrement, const boolean useFastScaling);
+
+void newviewGTRGAMMAPROT_AVX(int tipCase,
+			     double *x1, double *x2, double *x3, double *extEV, double *tipVector,
+			     int *ex3, unsigned char *tipX1, unsigned char *tipX2, int n, 
+			     double *left, double *right, int *wgt, int *scalerIncrement, const boolean useFastScaling);
+
+#endif

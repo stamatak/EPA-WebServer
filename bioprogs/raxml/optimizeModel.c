@@ -259,6 +259,7 @@ static void freeLinkageList( linkageList* ll)
 #define ALPHA_F 0
 #define INVAR_F 1
 #define RATE_F  2
+#define SCALER_F 3
 
 
 
@@ -284,7 +285,7 @@ static void evaluateChange(tree *tr, int rateNumber, double *value, double *resu
 		  int index = ll->ld[i].partitionList[k];
 		  tr->executeModel[index] = TRUE;
 		  tr->partitionData[index].alpha = value[i];
-		  makeGammaCats(tr->partitionData[index].alpha, tr->partitionData[index].gammaRates, 4);
+		  makeGammaCats(tr->partitionData[index].alpha, tr->partitionData[index].gammaRates, 4, tr->useGammaMedian);
 		}
 	    }
 	}
@@ -492,6 +493,73 @@ static void evaluateChange(tree *tr, int rateNumber, double *value, double *resu
 	}
 
       assert(pos == numberOfModels);
+      break;
+    case SCALER_F: 
+      assert(ll->entries == 1);
+      for(i = 0; i < ll->entries; i++)
+	{
+	  if(converged[i])
+	    {
+	      for(k = 0; k < ll->ld[i].partitions; k++)
+		tr->executeModel[ll->ld[i].partitionList[k]] = FALSE;
+	    }
+	  else
+	    {
+	      for(k = 0; k < ll->ld[i].partitions; k++)
+		{
+		  int index = ll->ld[i].partitionList[k];
+		  tr->executeModel[index] = TRUE;
+		  tr->brLenScaler = value[i];		  
+		  scaleBranches(tr, FALSE);		  
+		}
+	    }
+	}
+      
+#ifdef _USE_PTHREADS   
+      {
+	volatile double result;
+	
+	masterBarrier(THREAD_OPT_SCALER, tr);
+	if(tr->NumberOfModels == 1)
+	  {
+	    for(i = 0, result = 0.0; i < NumberOfThreads; i++)    	  
+	      result += reductionBuffer[i];  	        
+	    tr->perPartitionLH[0] = result;
+	  }
+	else
+	  {
+	    int j;
+	    volatile double partitionResult;
+	
+	    result = 0.0;
+
+	    for(j = 0; j < tr->NumberOfModels; j++)
+	      {
+		for(i = 0, partitionResult = 0.0; i < NumberOfThreads; i++)          	      
+		  partitionResult += reductionBuffer[i * tr->NumberOfModels + j];
+		result +=  partitionResult;
+		tr->perPartitionLH[j] = partitionResult;
+	      }
+	  }
+      }
+#else
+      evaluateGenericInitrav(tr, tr->start);
+#endif
+            
+      for(i = 0; i < ll->entries; i++)	
+	{	  
+	  result[i] = 0.0;
+	  
+	  for(k = 0; k < ll->ld[i].partitions; k++)
+	    {
+	      int index = ll->ld[i].partitionList[k];
+	      	      
+	      assert(tr->perPartitionLH[index] <= 0.0);		
+	      
+	      result[i] -= tr->perPartitionLH[index];	            
+	      tr->executeModel[index] = TRUE;
+	    }
+	}      
       break;
     default:
       assert(0);	
@@ -1209,7 +1277,7 @@ static void optAlpha(tree *tr, double modelEpsilon, linkageList *ll)
 	  for(k = 0; k < ll->ld[i].partitions; k++)
 	    {	      
 	      tr->partitionData[ll->ld[i].partitionList[k]].alpha = startAlpha[i];
-	      makeGammaCats(tr->partitionData[ll->ld[i].partitionList[k]].alpha, tr->partitionData[ll->ld[i].partitionList[k]].gammaRates, 4); 		
+	      makeGammaCats(tr->partitionData[ll->ld[i].partitionList[k]].alpha, tr->partitionData[ll->ld[i].partitionList[k]].gammaRates, 4, tr->useGammaMedian); 		
 	    }
 #ifdef _USE_PTHREADS
 	  revertModel++;
@@ -1712,7 +1780,7 @@ static void categorizePartition(tree *tr, rateCategorize *rc, int model, int low
       }
 
   for(k = 0; k < tr->partitionData[model].numberOfCategories; k++)
-    tr->partitionData[model].perSiteRates[k] = rc[k].rate; 
+    tr->partitionData[model].unscaled_perSiteRates[k] = rc[k].rate; 
 }
 
 
@@ -1919,7 +1987,7 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 		    w = tr->cdta->aliaswgt[i];
 		  
 		  double
-		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		    rate = tr->partitionData[model].unscaled_perSiteRates[tr->cdta->rateCategory[i]];
 		  
 		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);
 		  
@@ -1933,7 +2001,7 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 	      scaler = 1.0 / ((double)accRat);
 	  	  
 	      for(i = 0; i < tr->partitionData[model].numberOfCategories; i++)
-		tr->partitionData[model].perSiteRates[i] *= scaler;	    
+		tr->partitionData[model].perSiteRates[i] = scaler * tr->partitionData[model].unscaled_perSiteRates[i];	    
 
 	      accRat = 0.0;	 
 	      
@@ -1951,6 +2019,9 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 		}	         
 
 	      accRat /= ((double)accWgt);	  
+
+	      if(!(ABS(1.0 - accRat) < 1.0E-5))	   
+		printBothOpen("An assertion will fail: accumulated rate categories: %1.40f\n", accRat);
 
 	      assert(ABS(1.0 - accRat) < 1.0E-5);
 	    }                
@@ -2008,16 +2079,18 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 		    w = tr->cdta->aliaswgt[i];
 		  
 		  double
-		    rate = tr->partitionData[model].perSiteRates[tr->cdta->rateCategory[i]];
+		    rate = tr->partitionData[model].unscaled_perSiteRates[tr->cdta->rateCategory[i]];
 		  
 		  assert(0 <= tr->cdta->rateCategory[i] && tr->cdta->rateCategory[i] < tr->maxCategories);
 		  
 		  accWgt += w;
 		  
 		  accRat += (w * rate);
-		}
+		}	      
 	    }
 	  
+	 
+
 	  accRat /= ((double)accWgt);
 	  
 	  scaler = 1.0 / ((double)accRat);
@@ -2025,7 +2098,7 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 	  for(model = 0; model < tr->NumberOfModels; model++)
 	    {
 	      for(i = 0; i < tr->partitionData[model].numberOfCategories; i++)
-		tr->partitionData[model].perSiteRates[i] *= scaler;
+		tr->partitionData[model].perSiteRates[i] = scaler * tr->partitionData[model].unscaled_perSiteRates[i];
 	    }
 
 	  for(model = 0, accRat = 0.0; model < tr->NumberOfModels; model++)
@@ -2051,6 +2124,9 @@ void updatePerSiteRates(tree *tr, boolean scaleRates)
 
 	  accRat /= ((double)accWgt);	  
 
+	  if(!(ABS(1.0 - accRat) < 1.0E-5))	   
+	    printBothOpen("An assertion will fail: accumulated rate categories: %1.40f\n", accRat);
+	    
 	  assert(ABS(1.0 - accRat) < 1.0E-5);
 	}
          
@@ -2112,7 +2188,8 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
 	initialLH = tr->likelihood,	
 	*ratStored = (double *)malloc(sizeof(double) * tr->cdta->endsite),
 	*lhs =       (double *)malloc(sizeof(double) * tr->cdta->endsite),
-	**oldCategorizedRates = (double **)malloc(sizeof(double *) * tr->NumberOfModels);
+	**oldCategorizedRates = (double **)malloc(sizeof(double *) * tr->NumberOfModels),
+	**oldUnscaledCategorizedRates = (double **)malloc(sizeof(double *) * tr->NumberOfModels);
 
       int  
 	i,
@@ -2156,8 +2233,10 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
 	  oldNumbers[model]          = tr->partitionData[model].numberOfCategories;
 
 	  oldCategorizedRates[model] = (double *)malloc(sizeof(double) * tr->maxCategories);
+	  oldUnscaledCategorizedRates[model] = (double *)malloc(sizeof(double) * tr->maxCategories);
 	  
 	  memcpy(oldCategorizedRates[model], tr->partitionData[model].perSiteRates, tr->maxCategories * sizeof(double));	  	 	  
+	  memcpy(oldUnscaledCategorizedRates[model], tr->partitionData[model].unscaled_perSiteRates, tr->maxCategories * sizeof(double));
 	}      
       
 #ifdef _USE_PTHREADS
@@ -2242,6 +2321,7 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
 	    {
 	      tr->partitionData[model].numberOfCategories = oldNumbers[model];
 	      memcpy(tr->partitionData[model].perSiteRates, oldCategorizedRates[model], tr->maxCategories * sizeof(double));
+	      memcpy(tr->partitionData[model].unscaled_perSiteRates, oldUnscaledCategorizedRates[model], tr->maxCategories * sizeof(double));
 	    }	      
 	  
 	  memcpy(tr->cdta->patratStored, ratStored, sizeof(double) * tr->cdta->endsite);
@@ -2257,9 +2337,13 @@ static void optimizeRateCategories(tree *tr, int _maxCategories)
 	}
           
       for(model = 0; model < tr->NumberOfModels; model++)
-	free(oldCategorizedRates[model]);
+	{
+	  free(oldCategorizedRates[model]);
+	  free(oldUnscaledCategorizedRates[model]);
+	}
                    
       free(oldCategorizedRates);
+      free(oldUnscaledCategorizedRates);
       free(oldCategory);
       free(ratStored);       
       free(lhs); 
@@ -2296,6 +2380,82 @@ void resetBranches(tree *tr)
 	}
       p++;
     }
+}
+
+void scaleBranches(tree *tr, boolean fromFile)
+{
+  nodeptr  
+    p;
+  
+  int  
+    i,
+    nodes, 
+    count = 0;
+
+  double 
+    z;
+  
+  if(!tr->storedBrLens)
+    tr->storedBrLens = (double *)malloc(sizeof(double) * (2 * tr->mxtips - 3) * 2);
+
+  assert(tr->numBranches == 1);
+  
+  nodes = tr->mxtips  +  tr->mxtips - 2;
+  p = tr->nodep[1];
+
+  for(i = 1; i <= nodes; i++)
+    {      
+      p = tr->nodep[i];
+   
+      if(fromFile)
+	{
+	  tr->storedBrLens[count] = p->z[0];
+	  p->z[0] = exp(-p->z[0] / tr->fracchange);
+	}
+      else
+	{	
+	  z = tr->brLenScaler * tr->storedBrLens[count];
+	  p->z[0] = exp(-z / tr->fracchange);
+	}
+      count++;
+	
+	
+      if(i > tr->mxtips)
+	{	
+	  if(fromFile)
+	    {
+	      tr->storedBrLens[count] = p->next->z[0];
+	      p->next->z[0] = exp(-p->next->z[0] / tr->fracchange);
+	    }
+	  else
+	    {	      
+	      z = tr->brLenScaler * tr->storedBrLens[count];
+	      p->next->z[0] = exp(-z / tr->fracchange);
+	    }
+	  count++;
+	  
+	  if(fromFile)
+	    {
+	      tr->storedBrLens[count] = p->next->next->z[0];
+	      p->next->next->z[0] = exp(-p->next->next->z[0] / tr->fracchange);
+	    }
+	  else	  
+	    {	     
+	      z = tr->brLenScaler * tr->storedBrLens[count];
+	      p->next->next->z[0] = exp(-z / tr->fracchange);
+	    }
+	  count++;
+	}	  
+    }
+
+  /*printf("%d %d\n", count, (2 * tr->mxtips - 3) * 2);*/
+
+  assert(count == (2 * tr->mxtips - 3) * 2);
+
+#ifdef _USE_PTHREADS
+  if(!fromFile)
+    determineFullTraversal(tr->start, tr);
+#endif
 }
 
 
@@ -2389,7 +2549,87 @@ static void printAAmatrix(tree *tr, double epsilon)
 
 
 
+static void optScaler(tree *tr, double modelEpsilon, linkageList *ll)
+{  
+   int 
+    i, 
+    k,
+    numberOfModels = ll->entries;
+  
+  double 
+    lim_inf     = 0.01,
+    lim_sup     = 100.0;
+  double
+    *startLH    = (double *)malloc(sizeof(double) * numberOfModels),
+    *startAlpha = (double *)malloc(sizeof(double) * numberOfModels),
+    *endAlpha   = (double *)malloc(sizeof(double) * numberOfModels),
+    *_a         = (double *)malloc(sizeof(double) * numberOfModels),
+    *_b         = (double *)malloc(sizeof(double) * numberOfModels),
+    *_c         = (double *)malloc(sizeof(double) * numberOfModels),
+    *_fa        = (double *)malloc(sizeof(double) * numberOfModels),
+    *_fb        = (double *)malloc(sizeof(double) * numberOfModels),
+    *_fc        = (double *)malloc(sizeof(double) * numberOfModels),
+    *_param     = (double *)malloc(sizeof(double) * numberOfModels),
+    *result     = (double *)malloc(sizeof(double) * numberOfModels),
+    *_x         = (double *)malloc(sizeof(double) * numberOfModels);   
 
+
+   assert(numberOfModels == 1);
+   
+   
+  evaluateGenericInitrav(tr, tr->start);
+  
+  for(i = 0; i < numberOfModels; i++)
+    {
+      assert(ll->ld[i].valid);
+
+      startAlpha[i] = tr->brLenScaler;
+      _a[i] = startAlpha[i] + 0.1;
+      _b[i] = startAlpha[i] - 0.1;      
+      if(_b[i] < lim_inf) 
+	_b[i] = lim_inf;
+
+      startLH[i] = 0.0;
+      
+      for(k = 0; k < ll->ld[i].partitions; k++)		
+	startLH[i] += tr->perPartitionLH[ll->ld[i].partitionList[k]];	  	
+    }					  
+
+  brakGeneric(_param, _a, _b, _c, _fa, _fb, _fc, lim_inf, lim_sup, numberOfModels, -1, SCALER_F, tr, ll);       
+  brentGeneric(_a, _b, _c, _fb, modelEpsilon, _x, result, numberOfModels, SCALER_F, -1, tr, ll, lim_inf, lim_sup);
+
+  for(i = 0; i < numberOfModels; i++)
+    endAlpha[i] = result[i];
+ 
+
+  for(i = 0; i < numberOfModels; i++)
+    {
+      if(startLH[i] > endAlpha[i])
+	{    	  
+	  for(k = 0; k < ll->ld[i].partitions; k++)
+	    {	      
+	      tr->brLenScaler = startAlpha[i]; 	      	      
+	      scaleBranches(tr, FALSE);	     
+	    }
+	}  
+    }
+
+  evaluateGenericInitrav(tr, tr->start);
+  
+  free(startLH);
+  free(startAlpha);
+  free(endAlpha);
+  free(result);
+  free(_a);
+  free(_b);
+  free(_c);
+  free(_fa);
+  free(_fb);
+  free(_fc);
+  free(_param);
+  free(_x);  
+
+}
 
 void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilon, boolean testGappedImplementation)
 { 
@@ -2397,15 +2637,21 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
   double 
     currentLikelihood,
     modelEpsilon = 0.0001;
-  linkageList *alphaList;
-  linkageList *invarList;
-  linkageList *rateList; 
+  linkageList 
+    *alphaList,
+    *invarList,
+    *rateList,
+    *scalerList; 
   /*
     int linkedAlpha[4] = {0, 0, 0, 0};   
     int linkedInvar[4] = {0, 0, 0, 0}; 
     int linkedRates[4] = {0, 0, 0, 0};
   */  
-  int *unlinked = (int *)malloc(sizeof(int) * tr->NumberOfModels);
+  int 
+    *unlinked = (int *)malloc(sizeof(int) * tr->NumberOfModels),
+    *linked =  (int *)malloc(sizeof(int) * tr->NumberOfModels);
+
+
   
 
   assert(!adef->useBinaryModelFile);
@@ -2414,12 +2660,16 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
   
   
   for(i = 0; i < tr->NumberOfModels; i++)
-    unlinked[i] = i;
+    {
+      unlinked[i] = i;
+      linked[i] = 0;
+    }
   
   alphaList = initLinkageList(unlinked, tr);
   invarList = initLinkageList(unlinked, tr);
   rateList  = initLinkageListGTR(tr);
-  
+  scalerList = initLinkageList(linked, tr);
+    
   if(!(adef->mode == CLASSIFY_ML))
     tr->start = tr->nodep[1];
   
@@ -2452,7 +2702,7 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	  
 	  initReversibleGTR(tr, model);      
 	  
-	  makeGammaCats(tr->partitionData[model].alpha, tr->partitionData[model].gammaRates, 4); 
+	  makeGammaCats(tr->partitionData[model].alpha, tr->partitionData[model].gammaRates, 4, tr->useGammaMedian); 
 	}
 #ifdef _USE_PTHREADS     
       masterBarrier(THREAD_RESET_MODEL ,tr);    
@@ -2478,34 +2728,48 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
   
   do
     {           
-      currentLikelihood = tr->likelihood;
-      
-
+      currentLikelihood = tr->likelihood;      
       
       optRatesGeneric(tr, modelEpsilon, rateList);
       
       onlyInitrav(tr, tr->start);         
       
-      treeEvaluate(tr, 0.0625);                     	            
-      
+      if(adef->mode != OPTIMIZE_BR_LEN_SCALER)
+	treeEvaluate(tr, 0.0625);                     	            
+      else 	 
+	optScaler(tr, modelEpsilon, scalerList);
+	 
       switch(tr->rateHetModel)
 	{	  
 	case GAMMA_I:
 	  optAlpha(tr, modelEpsilon, alphaList);
-	  optInvar(tr, modelEpsilon, invarList); 	      	    	   	 
-	  treeEvaluate(tr, 0.1);    	 
+	  optInvar(tr, modelEpsilon, invarList);
+
+	  if(adef->mode != OPTIMIZE_BR_LEN_SCALER)		      	    	   	 
+	    treeEvaluate(tr, 0.1);  
+	  else 	  
+	    optScaler(tr, modelEpsilon, scalerList);	
+	  
 	  break;
 	case GAMMA:      
 	  optAlpha(tr, modelEpsilon, alphaList); 
-	  onlyInitrav(tr, tr->start); 	 	 
-	  treeEvaluate(tr, 0.1);	  	 
+	  onlyInitrav(tr, tr->start); 
+
+	  if(adef->mode != OPTIMIZE_BR_LEN_SCALER)	 	 
+	    treeEvaluate(tr, 0.1);
+	  else 	   
+	    optScaler(tr, modelEpsilon, scalerList);	     
 	  break;
+	  
 	case CAT:
-	  if(catOpt < 3)
-	    {	      	
-	      evaluateGenericInitrav(tr, tr->start);
-	      optimizeRateCategories(tr, adef->categories);	      	     	      	      
-	      catOpt++;
+	  if(!tr->noRateHet)
+	    {
+	      if(catOpt < 3)
+		{	      	
+		  evaluateGenericInitrav(tr, tr->start);
+		  optimizeRateCategories(tr, adef->categories);	      	     	      	      
+		  catOpt++;
+		}
 	    }
 	  break;	  
 	default:
@@ -2523,6 +2787,8 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
 	    *bestScore = (double *)malloc(tr->cdta->endsite * sizeof(double));
 
 	  /*printf("enter: %f\n", tr->likelihood);*/
+
+	  assert(adef->mode != OPTIMIZE_BR_LEN_SCALER);
 
 	  for(s = 0; s < tr->cdta->endsite; s++)
 	    {
@@ -2577,9 +2843,11 @@ void modOpt(tree *tr, analdef *adef, boolean resetModel, double likelihoodEpsilo
   while(fabs(currentLikelihood - tr->likelihood) > likelihoodEpsilon);  
   
   free(unlinked);
+  free(linked);
   freeLinkageList(alphaList);
   freeLinkageList(rateList);
   freeLinkageList(invarList);  
+  freeLinkageList(scalerList);
 }
 
 
